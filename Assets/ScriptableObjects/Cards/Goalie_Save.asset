@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ae028e1f8f2e4c79ac6fcd3c23ffcfaf, type: 3}
-  m_Name: GoalieSave
+  m_Name: Goalie_Save
   m_EditorClassIdentifier: Assembly-CSharp::CardData
   cardName: Goalie Save
   type: 1

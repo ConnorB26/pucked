@@ -511,8 +511,18 @@ MonoBehaviour:
     count: 20
   - cardData: {fileID: 11400000, guid: 0bca266e71c58dd4398d24a4288cd8f0, type: 2}
     count: 20
+  playerViews: []
+  deckSize: 0
+  discardPileSize: 0
+  currentPlayerName: 
   currentPlayerIndex: 0
+  activePlayerCount: 0
+  currentExtraTurns: 0
   isGameOver: 0
+  totalTurnsPlayed: 0
+  totalCardsPlayed: 0
+  puckdCardsDrawn: 0
+  successfulSaves: 0
 --- !u!114 &1676938817
 MonoBehaviour:
   m_ObjectHideFlags: 0

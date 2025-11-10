@@ -46,13 +46,10 @@ public class Deck
     /// <returns>The drawn card, or null if deck is empty</returns>
     public Card Draw()
     {
-        if (_drawPile.Count == 0)
-        {
-            Debug.LogWarning("Attempting to draw from empty deck!");
-            return null;
-        }
+        if (_drawPile.Count != 0) return _drawPile.Pop();
 
-        return _drawPile.Pop();
+        Debug.LogWarning("Attempting to draw from empty deck!");
+        return null;
     }
 
     /// <summary>

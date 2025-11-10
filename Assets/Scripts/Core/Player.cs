@@ -32,11 +32,6 @@ public class Player
     private readonly List<Card> _hand = new();
 
     /// <summary>
-    /// Reference to the UI element representing this player
-    /// </summary>
-    public PlayerUI PlayerUI { get; set; }
-
-    /// <summary>
     /// Number of cards currently in hand
     /// </summary>
     public int HandSize => _hand.Count;
@@ -117,9 +112,8 @@ public class Player
     /// Play a card from the player's hand
     /// </summary>
     /// <param name="card">The card to play</param>
-    /// <param name="game">Current game instance</param>
     /// <param name="targetPlayer">Optional target player for cards that need targets</param>
-    public void PlayCard(Card card, GameManager game, Player targetPlayer = null)
+    public void PlayCard(Card card, Player targetPlayer = null)
     {
         if (!_hand.Contains(card))
         {
@@ -133,7 +127,7 @@ public class Player
             return;
         }
 
-        game.CardHandler.HandleCardPlay(card, this, targetPlayer);
+        GameManager.Instance.CardHandler.HandleCardPlay(card, this, targetPlayer);
     }
 
     /// <summary>

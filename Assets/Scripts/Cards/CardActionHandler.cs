@@ -8,17 +8,11 @@ using UnityEngine;
 /// </summary>
 public class CardActionHandler
 {
-    private readonly GameManager _gameManager;
-
     /// <summary>
-    /// Fired when a player peeks at cards. UI should handle showing the cards.
+    /// Event fired when a player needs to see cards from a Peek action.
+    /// Subscribers (usually UI) should display these cards to the specific player.
     /// </summary>
-    public event Action<Player, Card[]> OnPeekCards;
-
-    public CardActionHandler(GameManager gameManager)
-    {
-        _gameManager = gameManager;
-    }
+    public event Action<Player, CardData[]> OnPeekCards;
 
     /// <summary>
     /// Process a card being played by a player
@@ -41,18 +35,16 @@ public class CardActionHandler
         }
 
         // Process the card effect
-        bool wasSuccessful = ProcessCardEffect(card, player, targetPlayer);
+        var wasSuccessful = ProcessCardEffect(card, player, targetPlayer);
+        if (!wasSuccessful) return;
+        
+        // Remove from hand and mark as played
+        player.RemoveCardFromHand(card);
+        card.MarkAsPlayed();
+        GameManager.Instance.Deck.Discard(card);
+        player.UpdateUI();
 
-        if (wasSuccessful)
-        {
-            // Remove from hand and mark as played
-            player.RemoveCardFromHand(card);
-            card.MarkAsPlayed();
-            _gameManager.Deck.Discard(card);
-            player.UpdateUI();
-
-            Debug.Log($"{player.Name} successfully played {card.Data.cardName}");
-        }
+        Debug.Log($"{player.Name} successfully played {card.Data.cardName}");
     }
 
     private bool ProcessCardEffect(Card card, Player player, Player targetPlayer)
@@ -118,21 +110,21 @@ public class CardActionHandler
 
         Debug.Log(
             $"{player.Name} played {card.Data.cardName} - {targetPlayer.Name} must take {card.Data.extraTurns} extra turns!");
-        // TODO: Implement extra turns tracking in GameManager
+        GameManager.Instance.AddExtraTurns(card.Data.extraTurns);
         return true;
     }
 
     private bool HandleSkip(Card card, Player player)
     {
         Debug.Log($"{player.Name} played {card.Data.cardName} - Skipping turn!");
-        _gameManager.EndTurn();
+        GameManager.Instance.EndTurn();
         return true;
     }
 
     private bool HandlePeek(Card card, Player player)
     {
         var peekAmount = card.Data.peekAmount;
-        var topCards = _gameManager.Deck.PeekTop(peekAmount);
+        var topCards = GameManager.Instance.Deck.PeekTop(peekAmount);
 
         if (topCards.Count == 0)
         {
@@ -141,14 +133,16 @@ public class CardActionHandler
         }
 
         Debug.Log($"{player.Name} played {card.Data.cardName} - Peeking at top {topCards.Count} cards");
-        OnPeekCards?.Invoke(player, topCards.ToArray());
+        // Convert to CardData array since we only need the static data for display
+        var cardDataToShow = topCards.Select(c => c.Data).ToArray();
+        OnPeekCards?.Invoke(player, cardDataToShow);
         return true;
     }
 
     private bool HandleShuffle(Card card, Player player)
     {
         Debug.Log($"{player.Name} played {card.Data.cardName} - Shuffling the deck!");
-        _gameManager.Deck.Shuffle();
+        GameManager.Instance.Deck.Shuffle();
         return true;
     }
 }

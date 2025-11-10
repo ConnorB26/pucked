@@ -97,7 +97,7 @@ public class GameManager : MonoBehaviour
 
         Instance = this;
         _deck = new Deck();
-        CardHandler = new CardActionHandler(this);
+        CardHandler = new CardActionHandler();
     }
 
     private void Update()

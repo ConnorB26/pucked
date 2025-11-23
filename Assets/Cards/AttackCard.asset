@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5117b47244d14af2b7b257875d08d5cc, type: 3}
+  m_Name: AttackCard
+  m_EditorClassIdentifier: Assembly-CSharp::Cards.CardDefinition
+  cardName: Attack
+  category: 3
+  artwork: {fileID: 0}
+  effects:
+  - {fileID: 11400000, guid: de4076c6ce97b2640ad2207198a413bd, type: 2}
+  description: 
+  variationIndex: 0

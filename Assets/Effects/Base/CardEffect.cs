@@ -1,5 +1,4 @@
-﻿using Resolver;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Effects.Base
 {

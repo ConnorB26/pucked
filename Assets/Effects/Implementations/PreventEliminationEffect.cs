@@ -1,6 +1,5 @@
 ﻿using Actions;
 using Effects.Base;
-using Resolver;
 using UnityEngine;
 
 namespace Effects.Implementations

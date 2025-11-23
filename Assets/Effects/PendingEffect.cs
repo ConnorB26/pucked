@@ -1,7 +1,7 @@
 ﻿using Actions;
 using Effects.Base;
 
-namespace Resolver
+namespace Effects
 {
     public struct PendingEffect
     {

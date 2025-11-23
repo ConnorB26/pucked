@@ -609,7 +609,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 898975018}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1419198859}
+        m_TargetAssemblyTypeName: UI.MainMenuController, Assembly-CSharp
+        m_MethodName: OnClickJoin
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!114 &898975018
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -887,7 +899,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 1216123529}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1419198859}
+        m_TargetAssemblyTypeName: UI.MainMenuController, Assembly-CSharp
+        m_MethodName: OnClickHost
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!114 &1216123529
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1180,11 +1204,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3cda4747e0c5419f92cfae7bf30f9197, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UI.LobbyUI
-  hostButton: {fileID: 1216123528}
+  maxConnections: 4
+  lobbySceneName: GameScene
+  nameInput: {fileID: 0}
+  colorPreview: {fileID: 0}
   joinCodeInput: {fileID: 1799422394}
-  joinButton: {fileID: 898975017}
-  statusText: {fileID: 32214324}
-  maxPlayers: 4
 --- !u!1 &1582113590
 GameObject:
   m_ObjectHideFlags: 0

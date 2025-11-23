@@ -3,7 +3,7 @@ using Actions;
 using Effects.Base;
 using UnityEngine;
 
-namespace Resolver
+namespace Effects
 {
     /// <summary>
     /// Manages execution order of effects.

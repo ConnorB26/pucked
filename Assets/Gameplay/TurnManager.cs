@@ -12,7 +12,7 @@ namespace Gameplay
         private int _currentIndex;
         private int _pendingExtraTurns;
 
-        public int CurrentPlayerId => _players[_currentIndex].playerId;
+        public int CurrentPlayerId => _players[_currentIndex].PlayerId;
 
         public TurnManager(List<PlayerRuntime> players)
         {
@@ -51,10 +51,10 @@ namespace Gameplay
         {
             // Nothing fancy for now; if the eliminated player was current,
             // advance to the next alive player.
-            var idx = _players.FindIndex(p => p.playerId == playerId);
+            var idx = _players.FindIndex(p => p.PlayerId == playerId);
             if (idx < 0) return;
 
-            _players[idx].isEliminated = true;
+            _players[idx].IsEliminated = true;
 
             if (idx == _currentIndex)
             {
@@ -71,7 +71,7 @@ namespace Gameplay
             do
             {
                 _currentIndex = (_currentIndex + 1) % _players.Count;
-                if (!_players[_currentIndex].isEliminated)
+                if (!_players[_currentIndex].IsEliminated)
                     return;
             } while (_currentIndex != start);
 

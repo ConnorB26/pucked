@@ -50,11 +50,11 @@ namespace Gameplay
                     break;
 
                 case ActionType.ForceExtraTurns:
-                    _ctx.turnManager.AddExtraTurnsForNextPlayer(value);
+                    _ctx.TurnManager.AddExtraTurnsForNextPlayer(value);
                     break;
 
                 case ActionType.SkipTurn:
-                    _ctx.turnManager.SkipCurrentPlayer();
+                    _ctx.TurnManager.SkipCurrentPlayer();
                     break;
 
                 case ActionType.PeekCards:
@@ -62,7 +62,7 @@ namespace Gameplay
                     break;
 
                 case ActionType.ShuffleDeck:
-                    _ctx.deckManager.Shuffle();
+                    _ctx.DeckManager.Shuffle();
                     break;
 
                 default:
@@ -77,18 +77,18 @@ namespace Gameplay
             var victimId = targetPlayerId == 0 ? ownerPlayerId : targetPlayerId;
 
             var player = _ctx.GetPlayer(victimId);
-            if (player == null || player.isEliminated)
+            if (player == null || player.IsEliminated)
                 return;
 
-            player.isEliminated = true;
-            _ctx.turnManager.OnPlayerEliminated(victimId);
+            player.IsEliminated = true;
+            _ctx.TurnManager.OnPlayerEliminated(victimId);
 
             // Optionally discard hand
-            if (_ctx.config.discardHandOnElimination && player.hand.Count > 0)
+            if (_ctx.Config.discardHandOnElimination && player.Hand.Count > 0)
             {
                 // Discard actual instances
-                _ctx.deckManager.DiscardMany(player.hand);
-                player.hand.Clear();
+                _ctx.DeckManager.DiscardMany(player.Hand);
+                player.Hand.Clear();
             }
 
             OnPlayerEliminated?.Invoke(victimId);
@@ -97,7 +97,7 @@ namespace Gameplay
         private void HandlePeek(int playerId, int count)
         {
             // Peek top instances
-            var instances = _ctx.deckManager.PeekTop(count);
+            var instances = _ctx.DeckManager.PeekTop(count);
 
             // UI probably only cares about CardDefinition here
             var defs = instances

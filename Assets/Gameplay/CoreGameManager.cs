@@ -79,7 +79,7 @@ namespace Gameplay
                     if (saveIndex >= _startingSaves.Count)
                         break;
 
-                    p.hand.Add(_startingSaves[saveIndex]);
+                    p.Hand.Add(_startingSaves[saveIndex]);
                     saveIndex++;
                 }
             }
@@ -87,13 +87,13 @@ namespace Gameplay
             // 2) Top up each player's hand from the deck until startingHandSize.
             foreach (var p in Players)
             {
-                while (p.hand.Count < _config.startingHandSize)
+                while (p.Hand.Count < _config.startingHandSize)
                 {
                     var maybeInstance = _deckManager.DrawTop();
                     if (maybeInstance == null)
                         break;
 
-                    p.hand.Add(maybeInstance.Value); // PlayerRuntime.hand is List<CardInstance>
+                    p.Hand.Add(maybeInstance.Value); // PlayerRuntime.hand is List<CardInstance>
                 }
             }
         }
@@ -108,19 +108,19 @@ namespace Gameplay
                 return;
 
             var player = _context.GetPlayer(playerId);
-            if (player == null || player.isEliminated)
+            if (player == null || player.IsEliminated)
                 return;
 
             // Find the card instance in this player's hand
-            var index = player.hand.FindIndex(ci => ci.InstanceId == cardInstanceId);
+            var index = player.Hand.FindIndex(ci => ci.InstanceId == cardInstanceId);
             if (index < 0)
                 return; // player doesn't own this card (desync or cheat attempt)
 
-            var instance = player.hand[index];
+            var instance = player.Hand[index];
             var cardDef = instance.Definition;
 
             // Remove from hand before resolving
-            player.hand.RemoveAt(index);
+            player.Hand.RemoveAt(index);
 
             var effectCtx = new EffectContext
             {
@@ -138,17 +138,17 @@ namespace Gameplay
 
         private void HandleEndOfTurn()
         {
-            _context.turnManager.EndTurn();
+            _context.TurnManager.EndTurn();
 
             if (_config.drawAtEndOfTurn)
             {
-                var currentPlayer = _context.GetPlayer(_context.turnManager.CurrentPlayerId);
+                var currentPlayer = _context.GetPlayer(_context.TurnManager.CurrentPlayerId);
                 for (var i = 0; i < _config.drawPerTurn; i++)
                 {
-                    var maybeInstance = _context.deckManager.DrawTop();
+                    var maybeInstance = _context.DeckManager.DrawTop();
                     if (maybeInstance == null) break;
 
-                    currentPlayer.hand.Add(maybeInstance.Value);
+                    currentPlayer.Hand.Add(maybeInstance.Value);
                 }
             }
 
@@ -161,17 +161,17 @@ namespace Gameplay
                 return;
 
             var player = _context.GetPlayer(playerId);
-            if (player == null || player.isEliminated)
+            if (player == null || player.IsEliminated)
                 return;
 
             // Return their cards to the deck and shuffle.
-            if (player.hand.Count > 0)
+            if (player.Hand.Count > 0)
             {
-                _deckManager.ReturnCardsToDrawAndShuffle(player.hand);
-                player.hand.Clear();
+                _deckManager.ReturnCardsToDrawAndShuffle(player.Hand);
+                player.Hand.Clear();
             }
 
-            player.isEliminated = true;
+            player.IsEliminated = true;
             _turnManager.OnPlayerEliminated(playerId);
             PlayerEliminated?.Invoke(playerId);
 
@@ -186,9 +186,9 @@ namespace Gameplay
 
             var aliveCount = 0;
             PlayerRuntime winner = null;
-            foreach (var p in _context.players)
+            foreach (var p in _context.Players)
             {
-                if (!p.isEliminated)
+                if (!p.IsEliminated)
                 {
                     aliveCount++;
                     winner = p;
@@ -203,7 +203,7 @@ namespace Gameplay
             }
         }
 
-        public TurnManager TurnManager => _context.turnManager;
+        public TurnManager TurnManager => _context.TurnManager;
         public List<PlayerRuntime> Players => _players;
     }
 }

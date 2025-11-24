@@ -10,6 +10,9 @@ namespace Networking
 {
     public static class RelayBootstrap
     {
+        public static string LastJoinCode { get; private set; }
+        public static int MaxConnections { get; private set; }
+        
         public static async Task<string> StartHostWithRelay(int maxConnections)
         {
             await EnsureServicesAsync();
@@ -35,6 +38,9 @@ namespace Networking
                 Debug.LogError("[RelayBootstrap] Failed to start host after configuring Relay.");
                 return null;
             }
+
+            LastJoinCode = joinCode;
+            MaxConnections = maxConnections;
 
             Debug.Log($"[RelayBootstrap] Host started. Join code: {joinCode}");
             return joinCode;
@@ -63,6 +69,8 @@ namespace Networking
                 Debug.LogError("[RelayBootstrap] Failed to start client after configuring Relay.");
                 return false;
             }
+
+            LastJoinCode = joinCode;
 
             Debug.Log("[RelayBootstrap] Client started and connecting via Relay.");
             return true;

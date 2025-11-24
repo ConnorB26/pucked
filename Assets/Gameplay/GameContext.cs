@@ -7,23 +7,23 @@ namespace Gameplay
     /// </summary>
     public class GameContext
     {
-        public GameConfig config;
-        public DeckManager deckManager;
-        public TurnManager turnManager;
-        public List<PlayerRuntime> players;
+        public GameConfig Config;
+        public DeckManager DeckManager;
+        public TurnManager TurnManager;
+        public List<PlayerRuntime> Players;
 
         public GameContext(GameConfig config,
             DeckManager deckManager,
             TurnManager turnManager,
             List<PlayerRuntime> players)
         {
-            this.config = config;
-            this.deckManager = deckManager;
-            this.turnManager = turnManager;
-            this.players = players;
+            this.Config = config;
+            this.DeckManager = deckManager;
+            this.TurnManager = turnManager;
+            this.Players = players;
         }
 
         public PlayerRuntime GetPlayer(int playerId)
-            => players.Find(p => p.playerId == playerId);
+            => Players.Find(p => p.PlayerId == playerId);
     }
 }

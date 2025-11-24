@@ -8,17 +8,15 @@ namespace Gameplay
     /// </summary>
     public class PlayerRuntime
     {
-        public int playerId; // matches whatever ID you use elsewhere
-        public string displayName;
+        public readonly int PlayerId;
 
-        public bool isEliminated;
+        public bool IsEliminated;
 
-        public List<CardInstance> hand = new();
+        public readonly List<CardInstance> Hand = new();
 
-        public PlayerRuntime(int id, string name)
+        public PlayerRuntime(int id)
         {
-            playerId = id;
-            displayName = name;
+            PlayerId = id;
         }
     }
 }

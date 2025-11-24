@@ -3,6 +3,7 @@ using Cards;
 using Effects;
 using Gameplay;
 using Networking.Snapshots;
+using UI;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -108,7 +109,7 @@ namespace Networking
             {
                 _clientIdToPlayerId[clientId] = idx;
                 _playerIdToClientId[idx] = clientId;
-                
+
                 players.Add(new PlayerRuntime(idx));
                 idx++;
             }
@@ -118,6 +119,7 @@ namespace Networking
 
             _core.PlayerEliminated += OnCorePlayerEliminated;
             _core.PeekRequested += OnCorePeekRequested;
+            _core.GameOver += OnCoreGameOver;
         }
 
         private void InitializeCoreGame()
@@ -179,14 +181,42 @@ namespace Networking
             if (_core != null)
             {
                 Debug.Log("[NetworkGameManager] Ending current game instance.");
-                // Optional: any cleanup of _core, event unsubscriptions, etc.
+
+                // Unsubscribe from core events
+                _core.PlayerEliminated -= OnCorePlayerEliminated;
+                _core.PeekRequested -= OnCorePeekRequested;
+                _core.GameOver -= OnCoreGameOver;
+
                 _core = null;
             }
 
+            _clientIdToPlayerId.Clear();
+            _playerIdToClientId.Clear();
             _isGameInitialized = false;
+        }
 
-            // Optionally clear any runtime state if needed,
-            // but keep _clientIdToPlayerId mapping so next game reuses same players.
+        private void OnCoreGameOver(int winnerPlayerId)
+        {
+            if (!IsServer) return;
+
+            Debug.Log($"[NetworkGameManager] Game over. Winner playerId = {winnerPlayerId}");
+
+            // 1) Tell all clients (including host) that the game ended & who won
+            GameOverRpc(winnerPlayerId);
+
+            // 2) Tear down current core game instance
+            ServerEndGame();
+
+            // 3) Reset the lobby back to ReadyUp so players can ready for a new game
+            var lobby = FindFirstObjectByType<NetworkLobbyManager>();
+            if (lobby != null)
+            {
+                lobby.ServerResetLobby();
+            }
+            else
+            {
+                Debug.LogWarning("[NetworkGameManager] No NetworkLobbyManager found to reset lobby.");
+            }
         }
 
         #endregion
@@ -291,6 +321,32 @@ namespace Networking
         {
             var names = snapshot.names.ToStringArray();
             Debug.Log($"[Client] Peek result for P{snapshot.playerId}: {names.Length} cards.");
+        }
+
+        // Server -> All: notify clients about game over and the winner.
+        [Rpc(SendTo.Everyone)]
+        private void GameOverRpc(int winnerPlayerId, RpcParams rpcParams = default)
+        {
+            var isWinner = winnerPlayerId == LocalPlayerId;
+            var isHost = NetworkManager.Singleton.IsServer;
+
+            if (!_playerIdToClientId.TryGetValue(winnerPlayerId, out var clientId))
+            {
+                Debug.LogWarning(
+                    $"[Client] Game over but could not find clientId for winner playerId {winnerPlayerId}");
+                return;
+            }
+
+            if (!MatchPlayerRegistry.TryGetProfile(clientId, out var winnerProfile))
+            {
+                Debug.LogWarning($"[Client] No profile found for winner clientId {clientId}");
+                winnerProfile = new PlayerProfileData($"Player {winnerPlayerId}", Color.white);
+            }
+
+            // Show UI
+            GameUIController.Instance.ShowGameOver(isWinner, winnerProfile, isHost);
+
+            Debug.Log($"[Client] Game over. Winner playerId = {winnerPlayerId}");
         }
 
         #endregion

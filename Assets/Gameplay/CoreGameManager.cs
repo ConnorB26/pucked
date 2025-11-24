@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Cards;
 using Effects;
 using Effects.Base;
@@ -10,12 +11,18 @@ namespace Gameplay
     /// <summary>
     /// Pure core game orchestration for a single match.
     /// Server/host only. No Unity networking types here.
+    /// Responsibilities:
+    ///  - Initialize deck, turn manager, runtime player state.
+    ///  - Deal starting hands (including reserved "saves").
+    ///  - Orchestrate playing cards -> resolving effects -> applying actions.
+    ///  - Handle end-of-turn draws, player leaves, and last-player-standing win condition.
     /// </summary>
     public class CoreGameManager
     {
+        // Current lifecycle phase of this match.
         public GamePhase Phase { get; private set; } = GamePhase.None;
 
-        private List<PlayerRuntime> _players;
+        // Core collaborators (set during Init).
         private DeckManager _deckManager;
         private TurnManager _turnManager;
         private GameContext _context;
@@ -23,25 +30,39 @@ namespace Gameplay
         private EffectResolver _effectResolver;
         private GameConfig _config;
 
-        // Saves reserved by DeckManager to guarantee 1-per-player at start (as in EK Defuses).
+        // Runtime players (shallow reference to game context players).
+        public List<PlayerRuntime> Players { get; private set; }
+
+        // Saves reserved by DeckManager to guarantee one-per-player at start when possible.
         private List<CardInstance> _startingSaves;
 
         // Events re-exposed for networking / UI
         public event Action<int> PlayerEliminated;
         public event Action<int, List<CardDefinition>> PeekRequested;
+        public event Action<int> GameOver;
 
+        // Convenient access to current TurnManager via context (when initialized).
+        public TurnManager TurnManager => _context?.TurnManager;
+
+        /// <summary>
+        /// Initialize the core game manager with config, effect resolver, and players.
+        /// Builds the deck, prepares the turn manager and deals starting hands.
+        /// </summary>
         public void Init(GameConfig config,
             EffectResolver resolver,
             List<PlayerRuntime> players)
         {
+            // Basic validation
+            if (config == null) throw new ArgumentNullException(nameof(config));
+            if (resolver == null) throw new ArgumentNullException(nameof(resolver));
+
             _config = config;
             _effectResolver = resolver;
-            _players = players;
+            Players = players ?? throw new ArgumentNullException(nameof(players));
 
             Phase = GamePhase.Setup;
 
-            // Build deck from DeckDefinition using player count,
-            // and get back the list of starting save instances (one per player when possible).
+            // Build deck and collect reserved "saves" for starting hands.
             _deckManager = new DeckManager();
             _deckManager.InitializeFromDeckDefinition(
                 config.deckDefinition,
@@ -49,86 +70,100 @@ namespace Gameplay
                 !config.disableShuffle,
                 out _startingSaves);
 
+            // Setup turn manager and context, then action executor that operates on the context.
             _turnManager = new TurnManager(Players);
             _context = new GameContext(config, _deckManager, _turnManager, Players);
             _actionExecutor = new GameActionExecutor(_context);
 
-            // Bridge internal executor events outward
+            // Bridge internal executor events outward (safe null invocation).
             _actionExecutor.OnPlayerEliminated += id => PlayerEliminated?.Invoke(id);
             _actionExecutor.OnPeekRequested += (pid, cards) => PeekRequested?.Invoke(pid, cards);
 
+            // Deal initial hands and move to in-game phase.
             DealStartingHands();
             Phase = GamePhase.InGame;
         }
 
         /// <summary>
         /// Deal starting hands to all players:
-        /// - First, give each player one reserved save card if available.
-        /// - Then, draw from the deck until each player reaches startingHandSize.
+        /// 1) Give each player one reserved save (from _startingSaves) if available.
+        /// 2) Draw from the deck until each player's hand reaches startingHandSize.
         /// </summary>
         private void DealStartingHands()
         {
-            if (_config.startingHandSize <= 0) return;
+            if (_config == null || _config.startingHandSize <= 0) return;
 
             // 1) Give each player one reserved save (if DeckManager generated enough).
-            var saveIndex = 0;
-            if (_startingSaves is { Count: > 0 })
+            if (_startingSaves != null && _startingSaves.Count > 0)
             {
-                foreach (var p in Players)
+                var saveIndex = 0;
+                foreach (var player in Players)
                 {
-                    if (saveIndex >= _startingSaves.Count)
-                        break;
-
-                    p.Hand.Add(_startingSaves[saveIndex]);
+                    if (saveIndex >= _startingSaves.Count) break;
+                    player.Hand.Add(_startingSaves[saveIndex]);
                     saveIndex++;
                 }
             }
 
             // 2) Top up each player's hand from the deck until startingHandSize.
-            foreach (var p in Players)
+            foreach (var player in Players)
             {
-                while (p.Hand.Count < _config.startingHandSize)
+                while (player.Hand.Count < _config.startingHandSize)
                 {
                     var maybeInstance = _deckManager.DrawTop();
-                    if (maybeInstance == null)
-                        break;
-
-                    p.Hand.Add(maybeInstance.Value); // PlayerRuntime.hand is List<CardInstance>
+                    if (maybeInstance == null) break;
+                    player.Hand.Add(maybeInstance.Value);
                 }
             }
         }
 
         /// <summary>
-        /// Play a card by its instance ID, from the specified player's hand.
-        /// Called only on the server/host (from NetworkGameManager).
+        /// Play a card from the given player's hand identified by cardInstanceId.
+        /// This is server/host-only logic. It:
+        ///  - Validates ownership and game state
+        ///  - Removes the card from hand
+        ///  - Queues and resolves effects using the EffectResolver
+        ///  - Applies resulting actions via GameActionExecutor
+        ///  - Advances end-of-turn handling
         /// </summary>
         public void PlayCard(int playerId, int cardInstanceId)
         {
-            if (Phase != GamePhase.InGame)
-                return;
+            if (Phase != GamePhase.InGame) return;
 
             var player = _context.GetPlayer(playerId);
-            if (player == null || player.IsEliminated)
+            if (player == null)
+            {
+                Debug.LogWarning($"[CoreGameManager] PlayCard: invalid playerId={playerId}");
                 return;
+            }
 
-            // Find the card instance in this player's hand
+            if (player.IsEliminated) return;
+
+            // Find the card instance in this player's hand.
             var index = player.Hand.FindIndex(ci => ci.InstanceId == cardInstanceId);
             if (index < 0)
-                return; // player doesn't own this card (desync or cheat attempt)
+            {
+                // Could be a desync or hook attempt; ignore silently but log for diagnostics.
+                Debug.LogWarning(
+                    $"[CoreGameManager] PlayCard: player {playerId} does not own cardInstance {cardInstanceId}");
+                return;
+            }
 
             var instance = player.Hand[index];
             var cardDef = instance.Definition;
 
-            // Remove from hand before resolving
+            // Remove from hand before resolving to avoid re-entrancy issues.
             player.Hand.RemoveAt(index);
 
+            // Prepare effect context. Targeting logic may update TargetPlayerId later.
             var effectCtx = new EffectContext
             {
                 OwnerPlayerId = playerId,
-                TargetPlayerId = 0, // can be changed by targetable effects later
-                CardId = instance.InstanceId // use instance ID as the "cardId" in context
+                TargetPlayerId = 0,
+                CardId = instance.InstanceId
             };
 
+            // Queue & resolve effects, then apply the resulting actions.
             _effectResolver.QueueEffects(cardDef.effects, effectCtx);
             var actions = _effectResolver.ResolveAll();
             _actionExecutor.ApplyActions(actions);
@@ -136,6 +171,12 @@ namespace Gameplay
             HandleEndOfTurn();
         }
 
+        /// <summary>
+        /// Common end-of-turn handling:
+        ///  - Advance turn to next player
+        ///  - Optionally draw cards at end of turn according to config
+        ///  - Check for last-player-standing game over condition
+        /// </summary>
         private void HandleEndOfTurn()
         {
             _context.TurnManager.EndTurn();
@@ -143,28 +184,32 @@ namespace Gameplay
             if (_config.drawAtEndOfTurn)
             {
                 var currentPlayer = _context.GetPlayer(_context.TurnManager.CurrentPlayerId);
-                for (var i = 0; i < _config.drawPerTurn; i++)
+                if (currentPlayer != null)
                 {
-                    var maybeInstance = _context.DeckManager.DrawTop();
-                    if (maybeInstance == null) break;
-
-                    currentPlayer.Hand.Add(maybeInstance.Value);
+                    for (var i = 0; i < _config.drawPerTurn; i++)
+                    {
+                        var maybeInstance = _context.DeckManager.DrawTop();
+                        if (maybeInstance == null) break;
+                        currentPlayer.Hand.Add(maybeInstance.Value);
+                    }
                 }
             }
 
             CheckForGameOver();
         }
 
+        /// <summary>
+        /// Handle a player leaving mid-game: return their cards to the deck, mark eliminated,
+        /// notify turn manager and external listeners, and check for game over.
+        /// </summary>
         public void HandlePlayerLeft(int playerId)
         {
-            if (Phase != GamePhase.InGame)
-                return;
+            if (Phase != GamePhase.InGame) return;
 
             var player = _context.GetPlayer(playerId);
-            if (player == null || player.IsEliminated)
-                return;
+            if (player == null || player.IsEliminated) return;
 
-            // Return their cards to the deck and shuffle.
+            // Return their hand to the deck and shuffle to avoid card loss.
             if (player.Hand.Count > 0)
             {
                 _deckManager.ReturnCardsToDrawAndShuffle(player.Hand);
@@ -175,35 +220,27 @@ namespace Gameplay
             _turnManager.OnPlayerEliminated(playerId);
             PlayerEliminated?.Invoke(playerId);
 
-            // Re-use last-player-standing win check
+            // Re-use last-player-standing win check after elimination.
             CheckForGameOver();
         }
 
+        /// <summary>
+        /// If the config specifies last-player-standing wins, check the remaining alive players.
+        /// If only one or zero remain, end the game and invoke GameOver with the winner id or -1.
+        /// </summary>
         private void CheckForGameOver()
         {
-            if (!_config.lastPlayerStandingWins)
-                return;
+            if (_config == null || !_config.lastPlayerStandingWins) return;
 
-            var aliveCount = 0;
-            PlayerRuntime winner = null;
-            foreach (var p in _context.Players)
-            {
-                if (!p.IsEliminated)
-                {
-                    aliveCount++;
-                    winner = p;
-                }
-            }
+            // Count alive players; capture the (last) survivor if present.
+            var alivePlayers = _context.Players.Where(p => !p.IsEliminated).ToList();
+            if (alivePlayers.Count > 1) return;
 
-            if (aliveCount <= 1)
-            {
-                Phase = GamePhase.GameOver;
-                // TODO: notify outer layer about winner (e.g., event or callback)
-                Debug.Log("[CoreGameManager] Game over due to last player standing (disconnect/elimination).");
-            }
+            Phase = GamePhase.GameOver;
+
+            var winnerId = alivePlayers.FirstOrDefault()?.PlayerId ?? -1;
+            Debug.Log($"[CoreGameManager] Game over due to last player standing. Winner playerId={winnerId}");
+            GameOver?.Invoke(winnerId);
         }
-
-        public TurnManager TurnManager => _context.TurnManager;
-        public List<PlayerRuntime> Players => _players;
     }
 }

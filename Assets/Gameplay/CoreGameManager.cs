@@ -40,6 +40,8 @@ namespace Gameplay
         public event Action<int> PlayerEliminated;
         public event Action<int, List<CardDefinition>> PeekRequested;
         public event Action<int> GameOver;
+        /// <summary>Fired when a Goalie Save automatically blocks a Puck'd draw.</summary>
+        public event Action<int> GoalieSaveUsed; // playerId who was saved
 
         // Convenient access to current TurnManager via context (when initialized).
         public TurnManager TurnManager => _context?.TurnManager;
@@ -94,7 +96,7 @@ namespace Gameplay
             if (_config == null || _config.startingHandSize <= 0) return;
 
             // 1) Give each player one reserved save (if DeckManager generated enough).
-            if (_startingSaves != null && _startingSaves.Count > 0)
+            if (_startingSaves is { Count: > 0 })
             {
                 var saveIndex = 0;
                 foreach (var player in Players)
@@ -106,14 +108,32 @@ namespace Gameplay
             }
 
             // 2) Top up each player's hand from the deck until startingHandSize.
+            //    Puck'd cards are skipped and shuffled back in after each player is dealt.
             foreach (var player in Players)
             {
+                var skippedPuckd = new List<CardInstance>();
+
                 while (player.Hand.Count < _config.startingHandSize)
                 {
+                    if (_deckManager.DrawCount == 0) break;
+
                     var maybeInstance = _deckManager.DrawTop();
                     if (maybeInstance == null) break;
-                    player.Hand.Add(maybeInstance.Value);
+
+                    var inst = maybeInstance.Value;
+                    if (inst.Definition?.category == CardCategory.Puckd)
+                    {
+                        // Puck'd cards must never start in a player's hand.
+                        skippedPuckd.Add(inst);
+                        continue;
+                    }
+
+                    player.Hand.Add(inst);
                 }
+
+                // Return any Puck'd cards that were skipped and reshuffle them in.
+                if (skippedPuckd.Count > 0)
+                    _deckManager.ReturnCardsToDrawAndShuffle(skippedPuckd);
             }
         }
 
@@ -126,7 +146,7 @@ namespace Gameplay
         ///  - Applies resulting actions via GameActionExecutor
         ///  - Advances end-of-turn handling
         /// </summary>
-        public void PlayCard(int playerId, int cardInstanceId)
+        public void PlayCard(int playerId, int cardInstanceId, int targetPlayerId = 0)
         {
             if (Phase != GamePhase.InGame) return;
 
@@ -152,14 +172,23 @@ namespace Gameplay
             var instance = player.Hand[index];
             var cardDef = instance.Definition;
 
+            // GoalieSave is auto-triggered on a Puck'd draw; Puck'd is draw-only.
+            // Neither may be played manually from hand.
+            if (cardDef != null && (cardDef.category == CardCategory.GoalieSave
+                                    || cardDef.category == CardCategory.Puckd))
+            {
+                Debug.LogWarning(
+                    $"[CoreGameManager] PlayCard: player {playerId} tried to manually play a {cardDef.category} card.");
+                return;
+            }
+
             // Remove from hand before resolving to avoid re-entrancy issues.
             player.Hand.RemoveAt(index);
 
-            // Prepare effect context. Targeting logic may update TargetPlayerId later.
             var effectCtx = new EffectContext
             {
                 OwnerPlayerId = playerId,
-                TargetPlayerId = 0,
+                TargetPlayerId = targetPlayerId,
                 CardId = instance.InstanceId
             };
 
@@ -168,32 +197,81 @@ namespace Gameplay
             var actions = _effectResolver.ResolveAll();
             _actionExecutor.ApplyActions(actions);
 
-            HandleEndOfTurn();
+            // Turn does NOT automatically end after playing a card.
+            // Some effects (Skip, Attack) advance the turn immediately via TurnManager.
+            // All other cards keep the turn with the current player until they click End Turn.
+
+            // Always check for game over — a card effect (e.g. future self-elimination cards)
+            // could eliminate a player without going through PlayerEndTurn.
+            CheckForGameOver();
         }
 
         /// <summary>
-        /// Common end-of-turn handling:
-        ///  - Advance turn to next player
-        ///  - Optionally draw cards at end of turn according to config
-        ///  - Check for last-player-standing game over condition
+        /// Called when the current player explicitly ends their turn (clicks End Turn).
+        /// Draws from the deck if configured, handles immediate draw triggers (Puck'd card),
+        /// then advances the turn to the next player.
         /// </summary>
-        private void HandleEndOfTurn()
+        public void PlayerEndTurn(int playerId)
         {
-            _context.TurnManager.EndTurn();
+            if (Phase != GamePhase.InGame) return;
+            if (_context.TurnManager.CurrentPlayerId != playerId) return;
+
+            var player = _context.GetPlayer(playerId);
+            if (player == null || player.IsEliminated) return;
 
             if (_config.drawAtEndOfTurn)
             {
-                var currentPlayer = _context.GetPlayer(_context.TurnManager.CurrentPlayerId);
-                if (currentPlayer != null)
+                // Draw once per owed turn (normal + any extra from Attack cards), all in one click.
+                var totalDraws = (1 + player.PendingExtraTurns) * _config.drawPerTurn;
+                player.PendingExtraTurns = 0;
+
+                for (var i = 0; i < totalDraws; i++)
                 {
-                    for (var i = 0; i < _config.drawPerTurn; i++)
+                    var drawn = _context.DeckManager.DrawTop();
+                    if (!drawn.HasValue) break;
+
+                    var instance = drawn.Value;
+                    var def = instance.Definition;
+
+                    // Puck'd card triggers immediately on draw — check for a Goalie Save first.
+                    if (def != null && def.category == CardCategory.Puckd)
                     {
-                        var maybeInstance = _context.DeckManager.DrawTop();
-                        if (maybeInstance == null) break;
-                        currentPlayer.Hand.Add(maybeInstance.Value);
+                        var saveIdx = player.Hand.FindIndex(
+                            ci => ci.Definition?.category == CardCategory.GoalieSave);
+
+                        if (saveIdx >= 0)
+                        {
+                            // Auto-consume the Goalie Save and return the Puck'd to the deck.
+                            var saveCard = player.Hand[saveIdx];
+                            player.Hand.RemoveAt(saveIdx);
+                            _deckManager.Discard(saveCard);
+                            _deckManager.ReturnCardsToDrawAndShuffle(new[] { instance });
+                            GoalieSaveUsed?.Invoke(playerId);
+                            break; // Turn ends normally; player was not eliminated.
+                        }
+
+                        // No save available — player is eliminated.
+                        var effectCtx = new EffectContext
+                        {
+                            OwnerPlayerId = playerId,
+                            TargetPlayerId = playerId,
+                            CardId = instance.InstanceId
+                        };
+                        _effectResolver.QueueEffects(def.effects, effectCtx);
+                        var actions = _effectResolver.ResolveAll();
+                        _actionExecutor.ApplyActions(actions);
+                        break;
                     }
+
+                    // Normal card — goes to hand.
+                    player.Hand.Add(instance);
                 }
             }
+
+            // Advance turn only if the player wasn't eliminated.
+            // If they were eliminated, TurnManager.OnPlayerEliminated already advanced for us.
+            if (!player.IsEliminated)
+                _context.TurnManager.EndTurn();
 
             CheckForGameOver();
         }

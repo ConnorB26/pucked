@@ -7,20 +7,20 @@ namespace Gameplay
     /// </summary>
     public class GameContext
     {
-        public GameConfig Config;
-        public DeckManager DeckManager;
-        public TurnManager TurnManager;
-        public List<PlayerRuntime> Players;
+        public readonly GameConfig Config;
+        public readonly DeckManager DeckManager;
+        public readonly TurnManager TurnManager;
+        public readonly List<PlayerRuntime> Players;
 
         public GameContext(GameConfig config,
             DeckManager deckManager,
             TurnManager turnManager,
             List<PlayerRuntime> players)
         {
-            this.Config = config;
-            this.DeckManager = deckManager;
-            this.TurnManager = turnManager;
-            this.Players = players;
+            Config = config;
+            DeckManager = deckManager;
+            TurnManager = turnManager;
+            Players = players;
         }
 
         public PlayerRuntime GetPlayer(int playerId)

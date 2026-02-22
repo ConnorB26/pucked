@@ -10,7 +10,6 @@ namespace Gameplay
     {
         private readonly List<PlayerRuntime> _players;
         private int _currentIndex;
-        private int _pendingExtraTurns;
 
         public int CurrentPlayerId => _players[_currentIndex].PlayerId;
 
@@ -18,33 +17,45 @@ namespace Gameplay
         {
             _players = players;
             _currentIndex = 0;
-            _pendingExtraTurns = 0;
         }
 
-        /// <summary>Call when the current player finishes their turn normally.</summary>
+        /// <summary>Call when the current player finishes their turn normally (all draws done).</summary>
         public void EndTurn()
         {
-            if (_pendingExtraTurns > 0)
+            AdvanceToNextAlivePlayer();
+        }
+
+        /// <summary>
+        /// Skip one pending extra turn for the current player (e.g. playing a Skip card while
+        /// under Attack). If extra turns are still owed the player stays active; otherwise the
+        /// turn advances to the next player.
+        /// </summary>
+        public void SkipCurrentPlayer()
+        {
+            var current = _players[_currentIndex];
+            if (current.PendingExtraTurns > 0)
             {
-                _pendingExtraTurns--;
-                // same player again
-                return;
+                current.PendingExtraTurns--;
+                // Player still owes draws — they remain active until PendingExtraTurns == 0
+                // and they click End Turn (which draws everything in one shot).
+                if (current.PendingExtraTurns > 0)
+                    return;
             }
 
             AdvanceToNextAlivePlayer();
         }
 
-        /// <summary>Skip the current player's remaining turns and go to the next.</summary>
-        public void SkipCurrentPlayer()
+        /// <summary>
+        /// Immediately sets the active turn to a specific player (e.g. targeted Attack).
+        /// Falls back to the next alive player if the target is eliminated.
+        /// </summary>
+        public void JumpToPlayer(int playerId)
         {
-            AdvanceToNextAlivePlayer();
-        }
-
-        /// <summary>Force the NEXT player in order to take 'turns' extra turns.</summary>
-        public void AddExtraTurnsForNextPlayer(int turns)
-        {
-            // For now we model this as "when we move to the next player, they get extra turns".
-            _pendingExtraTurns += Mathf.Max(0, turns);
+            var idx = _players.FindIndex(p => p.PlayerId == playerId && !p.IsEliminated);
+            if (idx >= 0)
+                _currentIndex = idx;
+            else
+                AdvanceToNextAlivePlayer();
         }
 
         public void OnPlayerEliminated(int playerId)

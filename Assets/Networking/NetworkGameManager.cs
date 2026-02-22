@@ -1,9 +1,8 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Cards;
 using Effects;
 using Gameplay;
 using Networking.Snapshots;
-using UI;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -11,7 +10,16 @@ namespace Networking
 {
     /// <summary>
     /// Network-facing wrapper around CoreGameManager.
-    /// Host/server is authoritative. Clients send play requests via Rpc to Server.
+    /// Host/server is authoritative. Clients send play requests via RPC.
+    ///
+    /// This class is the single coordination point between:
+    ///   - Server-side game logic (CoreGameManager, in Gameplay/)
+    ///   - Client-side state (LocalGameState)
+    ///   - Event bus (GameEvents)
+    ///
+    /// RPC handlers follow a consistent pattern:
+    ///   1. Update LocalGameState (so subscribers see current data)
+    ///   2. Fire GameEvents (so UI and other systems react)
     /// </summary>
     public class NetworkGameManager : NetworkBehaviour
     {
@@ -28,27 +36,21 @@ namespace Networking
 
         private CoreGameManager _core;
 
-        // Maps: clientId -> playerId, and back
+        // Maps: clientId <-> playerId (server-only)
         private readonly Dictionary<ulong, int> _clientIdToPlayerId = new();
         private readonly Dictionary<int, ulong> _playerIdToClientId = new();
 
-        // Client-side: who am I?
-        private int _localPlayerId = -1;
-        public int LocalPlayerId => _localPlayerId;
+        private bool _isGameInitialized;
 
         #endregion
 
         #region Network Lifecycle
 
-        private bool _isGameInitialized;
-
         public override void OnNetworkSpawn()
         {
-            if (!IsServer)
-                return;
+            if (!IsServer) return;
 
             Debug.Log("[NetworkGameManager] Server spawned.");
-
             NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
         }
 
@@ -62,40 +64,34 @@ namespace Networking
 
         private void OnClientDisconnected(ulong clientId)
         {
-            if (!IsServer || _core == null)
-                return;
+            if (!IsServer || _core == null) return;
 
             if (!_clientIdToPlayerId.TryGetValue(clientId, out var playerId))
                 return;
 
             Debug.Log($"[NetworkGameManager] Client {clientId} (player {playerId}) disconnected.");
 
-            // Remove from dictionaries so we don't try to sync them anymore.
             _clientIdToPlayerId.Remove(clientId);
             _playerIdToClientId.Remove(playerId);
 
-            // If we're in-game, treat this as a player leaving:
-            if (_core.Phase == GamePhase.InGame)
-            {
-                _core.HandlePlayerLeft(playerId);
+            if (_core.Phase != GamePhase.InGame) return;
 
-                // Re-sync remaining players' hands.
-                SyncAllHands();
+            // HandlePlayerLeft fires CoreGameManager.PlayerEliminated event,
+            // which triggers OnCorePlayerEliminated -> PlayerEliminatedRpc.
+            // It may also trigger game-over (which sets _core = null via ServerEndGame).
+            _core.HandlePlayerLeft(playerId);
 
-                // Notify clients about elimination & potential turn change.
-                PlayerEliminatedRpc(playerId);
+            // If game ended due to this disconnect, core events already handled
+            // the game-over RPC and cleanup. _core is null now.
+            if (_core is not { Phase: GamePhase.InGame }) return;
 
-                if (_core.Phase == GamePhase.InGame)
-                {
-                    NotifyTurnChangedRpc(_core.TurnManager.CurrentPlayerId);
-                }
-                else
-                {
-                    Debug.Log("[NetworkGameManager] Game ended due to disconnect.");
-                    // TODO: show game over UI on clients and allow host to return to lobby.
-                }
-            }
+            SyncAllHands();
+            NotifyTurnChangedRpc(_core.TurnManager.CurrentPlayerId);
         }
+
+        #endregion
+
+        #region Server: Initialization
 
         private void InitializePlayersFromConnectedClients()
         {
@@ -109,7 +105,6 @@ namespace Networking
             {
                 _clientIdToPlayerId[clientId] = idx;
                 _playerIdToClientId[idx] = clientId;
-
                 players.Add(new PlayerRuntime(idx));
                 idx++;
             }
@@ -120,73 +115,87 @@ namespace Networking
             _core.PlayerEliminated += OnCorePlayerEliminated;
             _core.PeekRequested += OnCorePeekRequested;
             _core.GameOver += OnCoreGameOver;
-        }
-
-        private void InitializeCoreGame()
-        {
-            // All done in InitializePlayersFromConnectedClients for now.
+            _core.GoalieSaveUsed += OnCoreGoalieSaveUsed;
         }
 
         private void SendInitialSyncToClients()
         {
-            foreach (var pair in _clientIdToPlayerId)
+            foreach (var (clientId, playerId) in _clientIdToPlayerId)
             {
-                var clientId = pair.Key;
-                var playerId = pair.Value;
-
-                // Assign local playerId on each client
                 AssignPlayerIdRpc(playerId, RpcTarget.Single(clientId, RpcTargetUse.Temp));
-
-                // Sync that player's starting hand
                 SyncHandToClient(clientId, playerId);
             }
         }
 
         #endregion
 
-        #region Public API (Client → NetworkGameManager)
+        #region Public API (Client -> NetworkGameManager)
 
         /// <summary>
-        /// Called by local UI to request playing a specific card instance.
+        /// Called by CardHandController when the local player clicks a card.
+        /// targetPlayerId is 0 for untargeted cards; set for cards like Attack.
         /// </summary>
-        public void RequestPlayCard(int cardInstanceId)
+        public void RequestPlayCard(int cardInstanceId, int targetPlayerId = 0)
         {
             if (!IsClient) return;
+            RequestPlayCardRpc(cardInstanceId, targetPlayerId);
+        }
 
-            RequestPlayCardRpc(cardInstanceId);
+        /// <summary>
+        /// Called by GameHUDController End Turn button. Draws from deck and advances turn.
+        /// </summary>
+        public void RequestEndTurn()
+        {
+            if (!IsClient) return;
+            RequestEndTurnRpc();
         }
 
         public void ServerStartGame()
         {
-            if (!IsServer)
-                return;
-            if (_isGameInitialized)
-                return;
+            if (!IsServer) return;
+            if (_isGameInitialized) return;
 
-            Debug.Log("[NetworkGameManager] ServerStartGame called by lobby.");
+            Debug.Log("[NetworkGameManager] ServerStartGame called.");
 
             InitializePlayersFromConnectedClients();
-            InitializeCoreGame();
             SendInitialSyncToClients();
 
+            // Broadcast whose turn it is.
             NotifyTurnChangedRpc(_core.TurnManager.CurrentPlayerId);
+
+            // Broadcast player roster (names + colors) so all clients know who is who.
+            foreach (var (clientId, playerId) in _clientIdToPlayerId)
+            {
+                if (MatchPlayerRegistry.TryGetProfile(clientId, out var profile))
+                {
+                    RegisterPlayerRpc(playerId, profile.displayName,
+                        ColorUtility.ToHtmlStringRGB(profile.color));
+                }
+                else
+                {
+                    RegisterPlayerRpc(playerId, $"Player {playerId}",
+                        ColorUtility.ToHtmlStringRGB(Color.white));
+                }
+            }
+
+            // Signal all clients the game is ready. Must be LAST so UI shows
+            // after all state (hand, turn, roster) is populated.
+            GameReadyRpc();
+
             _isGameInitialized = true;
         }
 
         public void ServerEndGame()
         {
-            if (!IsServer)
-                return;
+            if (!IsServer) return;
 
             if (_core != null)
             {
                 Debug.Log("[NetworkGameManager] Ending current game instance.");
-
-                // Unsubscribe from core events
                 _core.PlayerEliminated -= OnCorePlayerEliminated;
                 _core.PeekRequested -= OnCorePeekRequested;
                 _core.GameOver -= OnCoreGameOver;
-
+                _core.GoalieSaveUsed -= OnCoreGoalieSaveUsed;
                 _core = null;
             }
 
@@ -195,40 +204,12 @@ namespace Networking
             _isGameInitialized = false;
         }
 
-        private void OnCoreGameOver(int winnerPlayerId)
-        {
-            if (!IsServer) return;
-
-            Debug.Log($"[NetworkGameManager] Game over. Winner playerId = {winnerPlayerId}");
-
-            // 1) Tell all clients (including host) that the game ended & who won
-            GameOverRpc(winnerPlayerId);
-
-            // 2) Tear down current core game instance
-            ServerEndGame();
-
-            // 3) Reset the lobby back to ReadyUp so players can ready for a new game
-            var lobby = FindFirstObjectByType<NetworkLobbyManager>();
-            if (lobby != null)
-            {
-                lobby.ServerResetLobby();
-            }
-            else
-            {
-                Debug.LogWarning("[NetworkGameManager] No NetworkLobbyManager found to reset lobby.");
-            }
-        }
-
         #endregion
 
-        #region RPCs: Client → Server
+        #region RPCs: Client -> Server
 
-        /// <summary>
-        /// Clients call this to request playing a card by its instance ID.
-        /// Uses new Rpc API, sends to server.
-        /// </summary>
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-        private void RequestPlayCardRpc(int cardInstanceId, RpcParams rpcParams = default)
+        private void RequestPlayCardRpc(int cardInstanceId, int targetPlayerId, RpcParams rpcParams = default)
         {
             if (!IsServer) return;
 
@@ -240,7 +221,6 @@ namespace Networking
                 return;
             }
 
-            // Turn enforcement
             if (_core.TurnManager.CurrentPlayerId != playerId)
             {
                 Debug.LogWarning($"Player {playerId} tried to play out of turn.");
@@ -248,105 +228,188 @@ namespace Networking
             }
 
             var player = _core.Players[playerId];
-
-            // Validate the card instance exists in their hand
             var index = player.Hand.FindIndex(ci => ci.InstanceId == cardInstanceId);
+
             if (index < 0)
             {
-                Debug.LogWarning($"Player {playerId} attempted invalid card instance {cardInstanceId}");
+                Debug.LogWarning($"Player {playerId} has no card instance {cardInstanceId}");
                 return;
             }
 
-            // Server-authoritative card play (CoreGameManager expects instance ID) :contentReference[oaicite:4]{index=4}
-            _core.PlayCard(playerId, cardInstanceId);
+            // Capture card info BEFORE PlayCard removes it from hand.
+            var cardDef = player.Hand[index].Definition;
+            var cardName = cardDef != null ? cardDef.cardName : "Unknown";
+            var cardCategory = (int)(cardDef != null ? cardDef.category : 0);
 
-            // After state changes, sync all hands to clients
+            // Capture whose turn it is before resolving effects.
+            // Some effects (Skip, Attack) advance the turn immediately inside PlayCard.
+            var turnBefore = _core.TurnManager.CurrentPlayerId;
+
+            // Server-authoritative play. May advance turn (Skip/Attack), but does NOT
+            // require an End Turn — the player can keep playing cards first.
+            _core.PlayCard(playerId, cardInstanceId, targetPlayerId);
+
+            // Notify everyone what was played (even if game ended — clients should see it).
+            CardPlayedRpc(playerId, cardName, cardCategory);
+
+            // Game may have ended during PlayCard (elimination -> game over -> ServerEndGame).
+            if (_core == null || _core.Phase != GamePhase.InGame) return;
+
             SyncAllHands();
 
-            // And broadcast whose turn it is now
+            // Only send a turn-change notification if an effect immediately changed the turn
+            // (e.g. Skip, Attack). For normal cards, the turn stays and the player clicks End Turn.
+            if (_core.TurnManager.CurrentPlayerId != turnBefore)
+                NotifyTurnChangedRpc(_core.TurnManager.CurrentPlayerId);
+        }
+
+        /// <summary>
+        /// Client -> Server: player clicked End Turn.
+        /// Draws from the deck, handles immediate draw triggers (Puck'd), advances turn.
+        /// </summary>
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        private void RequestEndTurnRpc(RpcParams rpcParams = default)
+        {
+            if (!IsServer) return;
+
+            var senderClientId = rpcParams.Receive.SenderClientId;
+
+            if (!_clientIdToPlayerId.TryGetValue(senderClientId, out var playerId))
+            {
+                Debug.LogWarning($"Unknown clientId {senderClientId} in RequestEndTurnRpc.");
+                return;
+            }
+
+            if (_core == null || _core.Phase != GamePhase.InGame) return;
+
+            if (_core.TurnManager.CurrentPlayerId != playerId)
+            {
+                Debug.LogWarning($"Player {playerId} tried to end turn but it's not their turn.");
+                return;
+            }
+
+            // Draw + advance turn (may eliminate player if Puck'd is drawn).
+            _core.PlayerEndTurn(playerId);
+
+            // Game may have ended (player drew Puck'd -> eliminated -> game over).
+            if (_core == null || _core.Phase != GamePhase.InGame) return;
+
+            // Sync hands (player may have drawn a normal card) and broadcast new turn.
+            SyncAllHands();
             NotifyTurnChangedRpc(_core.TurnManager.CurrentPlayerId);
         }
 
         #endregion
 
-        #region RPCs: Server → Clients
+        #region RPCs: Server -> Clients
 
-        /// <summary>
-        /// Assigns a playerId to the client this RPC is sent to.
-        /// </summary>
+        /// <summary>Tells a specific client what their playerId is.</summary>
         [Rpc(SendTo.SpecifiedInParams)]
         private void AssignPlayerIdRpc(int playerId, RpcParams rpcParams = default)
         {
-            _localPlayerId = playerId;
+            LocalGameState.SetLocalPlayerId(playerId);
             Debug.Log($"[Client] Assigned local playerId = {playerId}");
         }
 
-        /// <summary>
-        /// Syncs a specific player's hand to the client this is sent to.
-        /// We send the card instance IDs plus enough definition data for UI.
-        /// </summary>
+        /// <summary>Syncs a player's hand to the owning client.</summary>
         [Rpc(SendTo.SpecifiedInParams)]
         private void SyncHandRpc(HandSnapshot snapshot, RpcParams rpcParams = default)
         {
             var names = snapshot.names.ToStringArray();
-            Debug.Log($"[Client] Hand sync for player {snapshot.playerId}: {snapshot.instanceIds.Length} cards.");
+
+            if (snapshot.playerId == LocalGameState.LocalPlayerId)
+            {
+                LocalGameState.UpdateHand(snapshot.instanceIds, names, snapshot.categories);
+                GameEvents.LocalHandUpdated();
+            }
+
+            Debug.Log(
+                $"[Client] Hand sync for player {snapshot.playerId}: {snapshot.instanceIds.Length} cards.");
         }
 
-        /// <summary>
-        /// Broadcast turn changes to all clients (except server).
-        /// </summary>
-        [Rpc(SendTo.NotServer)]
+        /// <summary>Broadcast turn change to ALL clients (including host).</summary>
+        [Rpc(SendTo.Everyone)]
         private void NotifyTurnChangedRpc(int currentPlayerId, RpcParams rpcParams = default)
         {
-            // TODO: UI hook:
-            // TurnUI.Instance.SetCurrentPlayer(currentPlayerId, LocalPlayerId);
+            LocalGameState.SetCurrentTurn(currentPlayerId);
+            GameEvents.TurnChanged(currentPlayerId);
             Debug.Log($"[Client] Turn changed. Current playerId = {currentPlayerId}");
         }
 
-        /// <summary>
-        /// Broadcast player elimination to all clients (except server).
-        /// </summary>
-        [Rpc(SendTo.NotServer)]
+        /// <summary>Broadcast player elimination to ALL clients (including host).</summary>
+        [Rpc(SendTo.Everyone)]
         private void PlayerEliminatedRpc(int playerId, RpcParams rpcParams = default)
         {
-            // TODO: UI hook: show elimination
+            LocalGameState.MarkPlayerEliminated(playerId);
+            GameEvents.PlayerEliminated(playerId);
             Debug.Log($"[Client] Player {playerId} eliminated.");
         }
 
-        /// <summary>
-        /// Sends peek results only to the peeking player's client.
-        /// </summary>
+        /// <summary>Send peek results only to the peeking player's client.</summary>
         [Rpc(SendTo.SpecifiedInParams)]
         private void PeekResultRpc(PeekSnapshot snapshot, RpcParams rpcParams = default)
         {
             var names = snapshot.names.ToStringArray();
-            Debug.Log($"[Client] Peek result for P{snapshot.playerId}: {names.Length} cards.");
+            GameEvents.PeekResultReceived(names);
+            Debug.Log($"[Client] Peek result: {names.Length} cards.");
         }
 
-        // Server -> All: notify clients about game over and the winner.
+        /// <summary>Register a player's identity on all clients (name + color).</summary>
+        [Rpc(SendTo.Everyone)]
+        private void RegisterPlayerRpc(int playerId, string displayName, string colorHtml,
+            RpcParams rpcParams = default)
+        {
+            if (!ColorUtility.TryParseHtmlString("#" + colorHtml, out var color))
+                color = Color.white;
+
+            LocalGameState.RegisterPlayer(playerId, displayName, color);
+            Debug.Log($"[Client] Registered player {playerId}: {displayName}");
+        }
+
+        /// <summary>
+        /// Signals all clients that the game has started. Sent LAST in the init
+        /// sequence so all state (hand, turn, roster) is already populated.
+        /// </summary>
+        [Rpc(SendTo.Everyone)]
+        private void GameReadyRpc(RpcParams rpcParams = default)
+        {
+            LocalGameState.StartGame();
+            GameEvents.GameStarted();
+            Debug.Log("[Client] Game started.");
+        }
+
+        /// <summary>
+        /// Notifies all clients what card was played (for notifications, log, animations).
+        /// </summary>
+        [Rpc(SendTo.Everyone)]
+        private void CardPlayedRpc(int playerId, string cardName, int category,
+            RpcParams rpcParams = default)
+        {
+            GameEvents.CardPlayed(playerId, cardName, (CardCategory)category);
+        }
+
+        /// <summary>Broadcast to all clients that a Goalie Save blocked a Puck'd draw.</summary>
+        [Rpc(SendTo.Everyone)]
+        private void GoalieSaveUsedRpc(int playerId, RpcParams rpcParams = default)
+        {
+            GameEvents.GoalieSaveUsed(playerId);
+        }
+
+        /// <summary>Notify all clients the game is over and who won.</summary>
         [Rpc(SendTo.Everyone)]
         private void GameOverRpc(int winnerPlayerId, RpcParams rpcParams = default)
         {
-            var isWinner = winnerPlayerId == LocalPlayerId;
-            var isHost = NetworkManager.Singleton.IsServer;
-
-            if (!_playerIdToClientId.TryGetValue(winnerPlayerId, out var clientId))
-            {
-                Debug.LogWarning(
-                    $"[Client] Game over but could not find clientId for winner playerId {winnerPlayerId}");
-                return;
-            }
-
-            if (!MatchPlayerRegistry.TryGetProfile(clientId, out var winnerProfile))
-            {
-                Debug.LogWarning($"[Client] No profile found for winner clientId {clientId}");
-                winnerProfile = new PlayerProfileData($"Player {winnerPlayerId}", Color.white);
-            }
-
-            // Show UI
-            GameUIController.Instance.ShowGameOver(isWinner, winnerProfile, isHost);
-
             Debug.Log($"[Client] Game over. Winner playerId = {winnerPlayerId}");
+
+            // Build winner profile from client-side player info (works on ALL clients).
+            var winnerProfile = LocalGameState.Players.TryGetValue(winnerPlayerId, out var info)
+                ? new PlayerProfileData(info.DisplayName, info.Color)
+                : new PlayerProfileData($"Player {winnerPlayerId}", Color.white);
+
+            // Order matters: GameEnded hides HUD, then GameOver shows game-over panel.
+            LocalGameState.EndGame();
+            GameEvents.GameEnded();
+            GameEvents.GameOver(winnerPlayerId, winnerProfile);
         }
 
         #endregion
@@ -356,9 +419,7 @@ namespace Networking
         private void SyncAllHands()
         {
             foreach (var pair in _clientIdToPlayerId)
-            {
                 SyncHandToClient(pair.Key, pair.Value);
-            }
         }
 
         private void SyncHandToClient(ulong clientId, int playerId)
@@ -388,7 +449,6 @@ namespace Networking
             }
 
             var snapshot = new HandSnapshot(playerId, instanceIds, names, categories);
-
             SyncHandRpc(snapshot, RpcTarget.Single(clientId, RpcTargetUse.Temp));
         }
 
@@ -399,7 +459,6 @@ namespace Networking
         private void OnCorePlayerEliminated(int playerId)
         {
             if (!IsServer) return;
-
             PlayerEliminatedRpc(playerId);
         }
 
@@ -430,8 +489,29 @@ namespace Networking
             }
 
             var snapshot = new PeekSnapshot(playerId, names, categories);
-
             PeekResultRpc(snapshot, RpcTarget.Single(clientId, RpcTargetUse.Temp));
+        }
+
+        private void OnCoreGoalieSaveUsed(int playerId)
+        {
+            if (!IsServer) return;
+            GoalieSaveUsedRpc(playerId);
+        }
+
+        private void OnCoreGameOver(int winnerPlayerId)
+        {
+            if (!IsServer) return;
+
+            Debug.Log($"[NetworkGameManager] Game over. Winner playerId = {winnerPlayerId}");
+
+            // Tell all clients the game ended.
+            GameOverRpc(winnerPlayerId);
+
+            // Clean up server-side game instance.
+            ServerEndGame();
+
+            // Lobby stays in InGame phase intentionally. It resets to ReadyUp
+            // only when the host clicks Rematch (via GameUIController -> ServerResetLobby).
         }
 
         #endregion

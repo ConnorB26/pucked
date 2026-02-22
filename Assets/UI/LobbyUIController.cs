@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using Networking;
 using Networking.Snapshots;
@@ -11,25 +11,35 @@ namespace UI
 {
     /// <summary>
     /// Controls the Lobby UI: join code, status, player rows, ready/start buttons.
-    /// Subscribes to NetworkLobbyManager lobby snapshots and updates the UI.
+    /// Subscribes to GameEvents.OnLobbyUpdated (no direct event coupling to NetworkLobbyManager).
+    /// Still holds a reference to NetworkLobbyManager for calling command methods
+    /// (SetLocalReady, HostRequestStartGame).
+    ///
+    /// Automatically hides the lobby panel when the game starts (phase = InGame)
+    /// and shows it again when the lobby resets to ReadyUp.
     /// </summary>
     public class LobbyUIController : MonoBehaviour
     {
         #region Serialized references
 
-        [Header("References")] [SerializeField]
-        private NetworkLobbyManager lobbyManager;
+        [Header("References")]
+        [SerializeField] private NetworkLobbyManager lobbyManager;
 
-        [Header("Top Info")] [SerializeField] private TMP_Text joinCodeText;
+        [Header("Panels")]
+        [Tooltip("Root panel for all lobby UI. Hidden during gameplay.")]
+        [SerializeField] private GameObject lobbyRootPanel;
+
+        [Header("Top Info")]
+        [SerializeField] private TMP_Text joinCodeText;
         [SerializeField] private TMP_Text statusText;
         [SerializeField] private TMP_Text playerCountText;
 
-        [Header("Player List")] [SerializeField]
-        private Transform playerListParent;
-
+        [Header("Player List")]
+        [SerializeField] private Transform playerListParent;
         [SerializeField] private LobbyPlayerRowUI playerRowPrefab;
 
-        [Header("Buttons")] [SerializeField] private Button readyButton;
+        [Header("Buttons")]
+        [SerializeField] private Button readyButton;
         [SerializeField] private TMP_Text readyButtonLabel;
         [SerializeField] private Button startButton;
 
@@ -45,11 +55,11 @@ namespace UI
         private void Awake()
         {
             if (lobbyManager == null)
-            {
                 lobbyManager = FindFirstObjectByType<NetworkLobbyManager>();
-            }
 
-            _localClientId = NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0;
+            _localClientId = NetworkManager.Singleton != null
+                ? NetworkManager.Singleton.LocalClientId
+                : 0;
 
             if (readyButton != null)
                 readyButton.onClick.AddListener(OnClickReady);
@@ -61,41 +71,27 @@ namespace UI
                 statusText.text = "Status: Connecting...";
 
             if (!string.IsNullOrEmpty(RelayBootstrap.LastJoinCode))
-            {
                 SetJoinCode(RelayBootstrap.LastJoinCode);
-            }
         }
 
         private void OnEnable()
         {
-            if (lobbyManager == null)
-                return;
-
-            lobbyManager.OnLobbySnapshotReceived += HandleLobbySnapshot;
+            GameEvents.OnLobbyUpdated += HandleLobbySnapshot;
         }
 
         private void OnDisable()
         {
-            if (lobbyManager == null)
-                return;
-
-            lobbyManager.OnLobbySnapshotReceived -= HandleLobbySnapshot;
+            GameEvents.OnLobbyUpdated -= HandleLobbySnapshot;
         }
 
         #endregion
 
         #region Public API
 
-        /// <summary>
-        /// Called by your relay / join-code system once the host has a code.
-        /// Updates the top join code text.
-        /// </summary>
         public void SetJoinCode(string code)
         {
             if (joinCodeText != null)
-            {
                 joinCodeText.text = $"Code: {code}";
-            }
         }
 
         #endregion
@@ -104,10 +100,15 @@ namespace UI
 
         private void HandleLobbySnapshot(LobbyStateSnapshot snapshot)
         {
-            // Update status text based on phase
+            var phase = (NetworkLobbyManager.LobbyPhase)snapshot.phase;
+
+            // ---- Panel visibility based on lobby phase ----
+            if (lobbyRootPanel != null)
+                lobbyRootPanel.SetActive(phase != NetworkLobbyManager.LobbyPhase.InGame);
+
+            // Update status text
             if (statusText != null)
             {
-                var phase = (NetworkLobbyManager.LobbyPhase)snapshot.phase;
                 var phaseText = phase switch
                 {
                     NetworkLobbyManager.LobbyPhase.ReadyUp => "Status: Waiting for players...",
@@ -118,18 +119,14 @@ namespace UI
                 statusText.text = phaseText;
             }
 
-            // Rebuild / update all rows
+            // Rebuild / update all player rows
             var clientIds = snapshot.clientIds;
             var names = snapshot.names.ToStringArray();
             var colors = snapshot.colors.ToStringArray();
             var readyFlags = snapshot.readyFlags;
 
-            // Player count text
             if (playerCountText != null)
-            {
-                var current = clientIds.Length;
-                playerCountText.text = $"Players: {current} / {snapshot.maxPlayers}";
-            }
+                playerCountText.text = $"Players: {clientIds.Length} / {snapshot.maxPlayers}";
 
             var seenIds = new HashSet<ulong>();
 
@@ -138,7 +135,7 @@ namespace UI
                 var clientId = clientIds[i];
                 seenIds.Add(clientId);
 
-                var name = names[i];
+                var playerName = names[i];
                 var colorHtml = colors[i];
                 var isReady = readyFlags[i];
 
@@ -153,7 +150,7 @@ namespace UI
                     _rows[clientId] = row;
                 }
 
-                row.Initialize(clientId, name, color, isReady, isLocal);
+                row.Initialize(clientId, playerName, color, isReady, isLocal);
 
                 if (isLocal)
                     _localIsReady = isReady;
@@ -168,9 +165,7 @@ namespace UI
             }
 
             foreach (var id in toRemove)
-            {
                 _rows.Remove(id);
-            }
 
             UpdateReadyButtonLabel();
             UpdateStartButtonState(snapshot);
@@ -182,8 +177,7 @@ namespace UI
 
         private void OnClickReady()
         {
-            if (lobbyManager == null)
-                return;
+            if (lobbyManager == null) return;
 
             _localIsReady = !_localIsReady;
             lobbyManager.SetLocalReady(_localIsReady);
@@ -192,8 +186,7 @@ namespace UI
 
         private void OnClickStartGame()
         {
-            if (lobbyManager == null)
-                return;
+            if (lobbyManager == null) return;
 
             lobbyManager.HostRequestStartGame();
         }
@@ -202,40 +195,24 @@ namespace UI
 
         #region UI helpers
 
-        /// <summary>
-        /// Updates the ready button label to reflect local ready state.
-        /// </summary>
         private void UpdateReadyButtonLabel()
         {
-            if (readyButtonLabel == null)
-                return;
+            if (readyButtonLabel == null) return;
 
             readyButtonLabel.text = _localIsReady ? "Unready" : "Ready";
         }
 
-        /// <summary>
-        /// Toggles start button visibility and interactability based on host status and ready states.
-        /// </summary>
         private void UpdateStartButtonState(LobbyStateSnapshot snapshot)
         {
-            if (startButton == null)
-                return;
+            if (startButton == null) return;
 
-            // Only host/server sees the start button
             var isHost = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
             startButton.gameObject.SetActive(isHost);
 
-            if (!isHost)
-                return;
+            if (!isHost) return;
 
-            // Enable only if everyone is ready
             var readyFlags = snapshot.readyFlags;
-            var allReady = readyFlags.Length > 0;
-            if (readyFlags.Any(t => !t))
-            {
-                allReady = false;
-            }
-
+            var allReady = readyFlags.Length > 0 && readyFlags.All(t => t);
             startButton.interactable = allReady;
         }
 

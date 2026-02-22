@@ -9,8 +9,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c4d5e1318df345cc80d06a44f610fd2c, type: 3}
-  m_Name: AttackEffect
-  m_EditorClassIdentifier: Assembly-CSharp::Effects.Implementations.AttackEffect
+  m_Script: {fileID: 11500000, guid: b9fdea7b36f842c09967275a2357aba9, type: 3}
+  m_Name: ShuffleEffect
+  m_EditorClassIdentifier: Assembly-CSharp::Effects.Implementations.ShuffleEffect
   description: 
-  extraTurns: 2

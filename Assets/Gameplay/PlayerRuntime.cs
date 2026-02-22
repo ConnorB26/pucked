@@ -12,6 +12,12 @@ namespace Gameplay
 
         public bool IsEliminated;
 
+        /// <summary>
+        /// Extra draw-turns owed (e.g. from an Attack card). Each unit means one additional
+        /// drawPerTurn worth of cards must be drawn at end of turn.
+        /// </summary>
+        public int PendingExtraTurns;
+
         public readonly List<CardInstance> Hand = new();
 
         public PlayerRuntime(int id)

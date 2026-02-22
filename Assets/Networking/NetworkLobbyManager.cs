@@ -56,15 +56,8 @@ namespace Networking
 
         #endregion
 
-        #region UI Events
-
-        /// <summary>
-        /// Raised on clients whenever a full lobby snapshot is received.
-        /// The UI can use this to rebuild the whole player list.
-        /// </summary>
-        public event Action<LobbyStateSnapshot> OnLobbySnapshotReceived;
-
-        #endregion
+        // UI events are now fired via the central GameEvents bus.
+        // Subscribe to GameEvents.OnLobbyUpdated instead of a local event.
 
         #region Unity / Network lifecycle
 
@@ -442,8 +435,8 @@ namespace Networking
 
             Debug.Log($"[Lobby] Snapshot applied locally. Phase={_phase}, players={clientIds.Length}");
 
-            // Fire UI event
-            OnLobbySnapshotReceived?.Invoke(snapshot);
+            // Fire via central event bus so any system can react.
+            GameEvents.LobbyUpdated(snapshot);
         }
 
         /// <summary>

@@ -50,7 +50,16 @@ namespace Gameplay
                     break;
 
                 case ActionType.ForceExtraTurns:
-                    _ctx.TurnManager.AddExtraTurnsForNextPlayer(value);
+                    // Attack ends the attacker's turn immediately (they don't draw).
+                    // Jump directly to the targeted player if one was specified; otherwise
+                    // advance to the next player in rotation.
+                    if (context.TargetPlayerId != 0 && context.TargetPlayerId != context.OwnerPlayerId)
+                        _ctx.TurnManager.JumpToPlayer(context.TargetPlayerId);
+                    else
+                        _ctx.TurnManager.SkipCurrentPlayer();
+                    var victim = _ctx.GetPlayer(_ctx.TurnManager.CurrentPlayerId);
+                    if (victim != null)
+                        victim.PendingExtraTurns += value;
                     break;
 
                 case ActionType.SkipTurn:
@@ -65,6 +74,7 @@ namespace Gameplay
                     _ctx.DeckManager.Shuffle();
                     break;
 
+                case ActionType.CancelLastEffect:
                 default:
                     Debug.LogWarning($"Unhandled GameAction type: {type}");
                     break;

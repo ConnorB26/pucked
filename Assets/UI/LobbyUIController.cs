@@ -102,11 +102,9 @@ namespace UI
         {
             var phase = (NetworkLobbyManager.LobbyPhase)snapshot.phase;
 
-            // ---- Panel visibility based on lobby phase ----
             if (lobbyRootPanel != null)
                 lobbyRootPanel.SetActive(phase != NetworkLobbyManager.LobbyPhase.InGame);
 
-            // Update status text
             if (statusText != null)
             {
                 var phaseText = phase switch
@@ -119,7 +117,6 @@ namespace UI
                 statusText.text = phaseText;
             }
 
-            // Rebuild / update all player rows
             var clientIds = snapshot.clientIds;
             var names = snapshot.names.ToStringArray();
             var colors = snapshot.colors.ToStringArray();
@@ -156,7 +153,6 @@ namespace UI
                     _localIsReady = isReady;
             }
 
-            // Remove rows for players no longer present
             var toRemove = new List<ulong>();
             foreach (var kvp in _rows.Where(kvp => !seenIds.Contains(kvp.Key)))
             {

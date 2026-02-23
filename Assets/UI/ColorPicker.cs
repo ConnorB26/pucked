@@ -7,6 +7,7 @@ using UnityEngine.UI;
 
 namespace UI
 {
+    /// <summary>HSV color picker using a 2D palette texture. X axis = hue, Y axis = saturation. Also supports hex input.</summary>
     public class ColorPicker : MonoBehaviour, IPointerDownHandler, IDragHandler
     {
         [Serializable]
@@ -44,7 +45,6 @@ namespace UI
 
         private void Start()
         {
-            // Initialize UI with current color
             SetColor(_currentColor, notify: false);
         }
 

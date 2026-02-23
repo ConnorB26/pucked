@@ -5,10 +5,7 @@ using Random = UnityEngine.Random;
 
 namespace Networking
 {
-    /// <summary>
-    /// Simple data for a player's lobby/profile identity.
-    /// Stored locally via PlayerPrefs and sent to the host when joining.
-    /// </summary>
+    /// <summary>Player identity data (name and color). Saved via PlayerPrefs and sent to the host on join.</summary>
     [Serializable]
     public struct PlayerProfileData
     {
@@ -22,10 +19,7 @@ namespace Networking
         }
     }
 
-    /// <summary>
-    /// Local-only helper for saving/loading the current player's profile.
-    /// Used in the main menu before we ever connect to Relay.
-    /// </summary>
+    /// <summary>Saves and loads the local player profile via PlayerPrefs. Used in the main menu.</summary>
     public static class LocalPlayerProfile
     {
         private const string NameKey = "Puckd_Profile_Name";
@@ -53,10 +47,7 @@ namespace Networking
         }
     }
 
-    /// <summary>
-    /// Static registry so that the lobby can pass final player profiles
-    /// into the game scene. NetworkGameManager reads from here.
-    /// </summary>
+    /// <summary>Static registry that passes player profiles from lobby to game scene. Read by NetworkGameManager.</summary>
     public static class MatchPlayerRegistry
     {
         private static readonly Dictionary<ulong, PlayerProfileData> Profiles = new();

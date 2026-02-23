@@ -4,22 +4,9 @@ using Networking;
 using Networking.Snapshots;
 
 /// <summary>
-/// Central event bus for game-wide notifications.
-/// Anyone can subscribe, anyone can fire. No references to specific managers needed.
-///
-/// This is the backbone for extensibility:
-///   - Game log?         Subscribe to OnCardPlayed, OnPlayerEliminated, OnTurnChanged.
-///   - Card animations?  Subscribe to OnCardPlayed.
-///   - Spectator HUD?    Subscribe to OnTurnChanged, OnPlayerEliminated, OnGameOver.
-///   - Sound effects?    Subscribe to OnCardPlayed, OnPlayerEliminated, OnGameStarted.
-///   - Host management?  Subscribe to OnLobbyUpdated.
-///
-/// Convention:
-///   - Events are named On{EventName}
-///   - Fire methods are named {EventName} (past-tense where it reads well)
-///   - Subscribe in OnEnable, unsubscribe in OnDisable
-///
-/// Intentionally has no namespace so every layer can use it without additional usings.
+/// Static event bus for game-wide notifications. Subscribe in OnEnable, unsubscribe in OnDisable.
+/// Fire methods are called by NetworkGameManager RPC handlers after updating LocalGameState.
+/// Intentionally has no namespace so every layer can use it without extra usings.
 /// </summary>
 public static class GameEvents
 {
@@ -66,8 +53,6 @@ public static class GameEvents
     public static event Action<int> OnGoalieSaveUsed; // playerId who was saved
 
     // ---- Fire Methods ----
-    // Called by NetworkGameManager RPC handlers. Each one updates LocalGameState
-    // first, then fires the corresponding event so subscribers see current state.
 
     public static void LobbyUpdated(LobbyStateSnapshot snapshot) =>
         OnLobbyUpdated?.Invoke(snapshot);

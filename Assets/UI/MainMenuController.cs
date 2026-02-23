@@ -7,6 +7,7 @@ using UnityEngine.UI;
 
 namespace UI
 {
+    /// <summary>Manages the main menu: player profile editing, and host/join flow via RelayBootstrap.</summary>
     public class MainMenuController : MonoBehaviour
     {
         [Header("Relay")] [SerializeField] private int maxConnections = 4;
@@ -29,14 +30,11 @@ namespace UI
         private void Start()
         {
             ShowMainMenu();
-
-            // Load saved profile and populate UI
             ResetProfileEditor();
 
             if (nameInput != null)
                 nameInput.text = _localProfile.displayName;
 
-            // Initialize color picker & preview from saved profile
             if (colorPicker != null)
             {
                 colorPicker.SetColor(_localProfile.color, notify: false);
@@ -109,13 +107,9 @@ namespace UI
         
         private void ResetProfileEditor()
         {
-            // Reload saved persistent data
             var saved = LocalPlayerProfile.LoadOrDefault();
-
-            // Reset the working copy
             _localProfile = saved;
 
-            // Reset UI fields
             if (nameInput != null)
                 nameInput.text = saved.displayName;
 
@@ -143,7 +137,7 @@ namespace UI
 
             Debug.Log($"Host join code: {code}");
 
-            // Once host networking is up, move everyone (host+clients) into the lobby scene.
+            // NetworkManager scene load moves all connected clients (including host) into the lobby scene.
             NetworkManager.Singleton.SceneManager.LoadScene(
                 lobbySceneName,
                 LoadSceneMode.Single);
@@ -163,7 +157,6 @@ namespace UI
                 Debug.LogError("Failed to join.");
             }
 
-            // Client will automatically follow the host into the current scene.
         }
 
         #endregion

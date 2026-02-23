@@ -4,6 +4,7 @@ using UnityEngine.UI;
 
 namespace UI
 {
+    /// <summary>A single row in the lobby player list, showing name, color swatch, and ready status.</summary>
     public class LobbyPlayerRowUI : MonoBehaviour
     {
         [Header("UI References")] [SerializeField]

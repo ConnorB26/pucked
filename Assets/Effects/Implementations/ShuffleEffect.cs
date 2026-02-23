@@ -1,9 +1,10 @@
-﻿using Actions;
+using Actions;
 using Effects.Base;
 using UnityEngine;
 
 namespace Effects.Implementations
 {
+    /// <summary>Shuffles the draw pile using Fisher-Yates.</summary>
     [CreateAssetMenu(menuName = "Puckd/Effects/Shuffle")]
     public class ShuffleEffect : CardEffect
     {

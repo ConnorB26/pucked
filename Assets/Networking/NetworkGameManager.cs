@@ -160,10 +160,8 @@ namespace Networking
             InitializePlayersFromConnectedClients();
             SendInitialSyncToClients();
 
-            // Broadcast whose turn it is.
             NotifyTurnChangedRpc(_core.TurnManager.CurrentPlayerId);
 
-            // Broadcast player roster (names + colors) so all clients know who is who.
             foreach (var (clientId, playerId) in _clientIdToPlayerId)
             {
                 if (MatchPlayerRegistry.TryGetProfile(clientId, out var profile))
@@ -504,10 +502,7 @@ namespace Networking
 
             Debug.Log($"[NetworkGameManager] Game over. Winner playerId = {winnerPlayerId}");
 
-            // Tell all clients the game ended.
             GameOverRpc(winnerPlayerId);
-
-            // Clean up server-side game instance.
             ServerEndGame();
 
             // Lobby stays in InGame phase intentionally. It resets to ReadyUp

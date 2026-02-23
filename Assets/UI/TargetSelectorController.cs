@@ -9,17 +9,8 @@ using UnityEngine.UI;
 namespace UI
 {
     /// <summary>
-    /// Shows a panel listing every alive opponent so the local player can pick a target
-    /// before a card requiring targeting (e.g. Attack) is confirmed.
-    ///
-    /// Setup in the Inspector:
-    ///   - panel         : the root GameObject of this selector (starts hidden)
-    ///   - buttonContainer : a VerticalLayoutGroup (or similar) that holds spawned buttons
-    ///   - playerButtonPrefab : a Button prefab that has a TMP_Text child for the player name
-    ///   - cancelButton  : a plain Button wired to Hide()
-    ///
-    /// CardHandController calls Show(...) when a targeting card is clicked and Hide()
-    /// if the turn changes before a target is chosen.
+    /// Shows a panel of alive opponents for the local player to pick a target before
+    /// confirming a targeting card (e.g. Attack). Auto-hides if the turn changes.
     /// </summary>
     public class TargetSelectorController : MonoBehaviour
     {
@@ -56,10 +47,7 @@ namespace UI
 
         #endregion
 
-        /// <summary>
-        /// Opens the target panel and populates it with buttons for each alive opponent.
-        /// onTargetSelected is invoked once the player picks a target; the panel then hides.
-        /// </summary>
+        /// <summary>Populates and shows opponent buttons; invokes onTargetSelected on pick, then hides.</summary>
         public void Show(Action<int> onTargetSelected)
         {
             _onTargetSelected = onTargetSelected;

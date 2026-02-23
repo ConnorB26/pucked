@@ -23,9 +23,7 @@ namespace UI
         private int _instanceId;
         private Action<int> _onClickCallback;
 
-        /// <summary>
-        /// Called by CardHandController when spawning this card.
-        /// </summary>
+        /// <summary>Binds card data and wires the click callback.</summary>
         public void Initialize(ClientCardData data, Action<int> onClickCallback)
         {
             _instanceId = data.InstanceId;

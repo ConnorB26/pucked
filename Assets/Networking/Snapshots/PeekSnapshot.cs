@@ -4,6 +4,7 @@ using Utility;
 
 namespace Networking.Snapshots
 {
+    /// <summary>Network-serializable peek result, sent privately to the peeking player's client.</summary>
     [Serializable]
     public struct PeekSnapshot : INetworkSerializable
     {

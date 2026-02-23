@@ -1,5 +1,6 @@
-﻿namespace Cards
+namespace Cards
 {
+    /// <summary>A specific runtime card with a unique instance ID and its definition.</summary>
     public struct CardInstance
     {
         public int InstanceId; // unique per match

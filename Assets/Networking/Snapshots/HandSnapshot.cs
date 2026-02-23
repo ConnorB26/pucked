@@ -4,6 +4,7 @@ using Utility;
 
 namespace Networking.Snapshots
 {
+    /// <summary>Network-serializable snapshot of a player's hand, sent per-player after each state change.</summary>
     [Serializable]
     public struct HandSnapshot : INetworkSerializable
     {

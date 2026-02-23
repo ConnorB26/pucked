@@ -1,19 +1,16 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace Effects.Base
 {
     /// <summary>
-    /// Base ScriptableObject describing an effect.
-    /// Does NOT execute game logic directly.
+    /// Abstract ScriptableObject describing a card effect. Does not execute game logic directly —
+    /// it produces a PendingEffect that the EffectResolver resolves into a GameAction.
     /// </summary>
     public abstract class CardEffect : ScriptableObject
     {
         [TextArea] public string description;
 
-        /// <summary>
-        /// Converts this effect into a PendingEffect
-        /// that the resolver can push onto the stack.
-        /// </summary>
+        /// <summary>Converts this effect into a PendingEffect for the resolver stack.</summary>
         public abstract PendingEffect CreateRuntimeEffect(EffectContext context);
     }
 }

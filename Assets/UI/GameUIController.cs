@@ -8,13 +8,8 @@ using UnityEngine.UI;
 namespace UI
 {
     /// <summary>
-    /// Controls the game-over panel: shows winner text, rematch / close buttons.
-    ///
-    /// Subscribes to GameEvents — no external code calls into this class.
-    ///   - OnGameOver:      show the game-over panel with winner info.
-    ///   - OnLobbyUpdated:  when lobby returns to ReadyUp (rematch), hide panel & reset state.
-    ///
-    /// The host sees Rematch / Close Lobby buttons; clients see neither.
+    /// Game-over panel controller. Shows winner info and host-only Rematch / Close Lobby buttons.
+    /// Hides and resets when the lobby returns to ReadyUp.
     /// </summary>
     public class GameUIController : MonoBehaviour
     {
@@ -72,10 +67,7 @@ namespace UI
                 closeLobbyButton.gameObject.SetActive(isHost);
         }
 
-        /// <summary>
-        /// When the lobby phase returns to ReadyUp (host clicked Rematch),
-        /// hide the game-over panel and reset client-side game state.
-        /// </summary>
+        /// <summary>Hides the game-over panel and resets game state when lobby returns to ReadyUp.</summary>
         private void HandleLobbyUpdated(LobbyStateSnapshot snapshot)
         {
             var phase = (NetworkLobbyManager.LobbyPhase)snapshot.phase;
@@ -94,10 +86,7 @@ namespace UI
 
         #region Button Handlers (wired in Inspector)
 
-        /// <summary>
-        /// Host clicks Rematch. Resets lobby to ReadyUp phase, which
-        /// triggers a LobbyUpdated snapshot → HandleLobbyUpdated hides this panel.
-        /// </summary>
+        /// <summary>Resets the lobby to ReadyUp, triggering HandleLobbyUpdated to hide this panel.</summary>
         public void OnClickRematch()
         {
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
@@ -106,9 +95,7 @@ namespace UI
             lobby?.ServerResetLobby();
         }
 
-        /// <summary>
-        /// Host clicks Close Lobby. Shuts down networking and returns to main menu.
-        /// </summary>
+        /// <summary>Shuts down networking and returns to the main menu.</summary>
         public void OnClickCloseLobby()
         {
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;

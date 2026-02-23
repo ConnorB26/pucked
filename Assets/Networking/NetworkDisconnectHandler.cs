@@ -4,6 +4,7 @@ using UnityEngine.SceneManagement;
 
 namespace Networking
 {
+    /// <summary>Listens for disconnect callbacks. Redirects non-host clients to the main menu on disconnect.</summary>
     public class NetworkDisconnectHandler : MonoBehaviour
     {
         public string mainMenuSceneName = "MainMenuScene";

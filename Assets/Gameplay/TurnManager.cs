@@ -1,17 +1,25 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Gameplay
 {
     /// <summary>
-    /// Handles turn order, skips, extra turns from Attack cards, and elimination.
+    /// Manages turn order, skips, extra turns from attacks, and eliminated-player advancement.
     /// </summary>
     public class TurnManager
     {
+        #region Fields
+
         private readonly List<PlayerRuntime> _players;
         private int _currentIndex;
 
+        #endregion
+
+        #region Properties
+
         public int CurrentPlayerId => _players[_currentIndex].PlayerId;
+
+        #endregion
 
         public TurnManager(List<PlayerRuntime> players)
         {
@@ -19,16 +27,17 @@ namespace Gameplay
             _currentIndex = 0;
         }
 
-        /// <summary>Call when the current player finishes their turn normally (all draws done).</summary>
+        #region Turn Advancement
+
+        /// <summary>Advances to the next alive player. Called after draws are complete.</summary>
         public void EndTurn()
         {
             AdvanceToNextAlivePlayer();
         }
 
         /// <summary>
-        /// Skip one pending extra turn for the current player (e.g. playing a Skip card while
-        /// under Attack). If extra turns are still owed the player stays active; otherwise the
-        /// turn advances to the next player.
+        /// Consumes one pending extra turn if owed (e.g. Skip while under Attack),
+        /// only advancing once all extra turns are cleared.
         /// </summary>
         public void SkipCurrentPlayer()
         {
@@ -36,8 +45,6 @@ namespace Gameplay
             if (current.PendingExtraTurns > 0)
             {
                 current.PendingExtraTurns--;
-                // Player still owes draws — they remain active until PendingExtraTurns == 0
-                // and they click End Turn (which draws everything in one shot).
                 if (current.PendingExtraTurns > 0)
                     return;
             }
@@ -45,10 +52,7 @@ namespace Gameplay
             AdvanceToNextAlivePlayer();
         }
 
-        /// <summary>
-        /// Immediately sets the active turn to a specific player (e.g. targeted Attack).
-        /// Falls back to the next alive player if the target is eliminated.
-        /// </summary>
+        /// <summary>Sets the active turn to a specific player (targeted Attack). Falls back if target is eliminated.</summary>
         public void JumpToPlayer(int playerId)
         {
             var idx = _players.FindIndex(p => p.PlayerId == playerId && !p.IsEliminated);
@@ -58,25 +62,29 @@ namespace Gameplay
                 AdvanceToNextAlivePlayer();
         }
 
+        #endregion
+
+        #region Elimination
+
+        /// <summary>Marks a player eliminated and advances the turn if they were current.</summary>
         public void OnPlayerEliminated(int playerId)
         {
-            // Nothing fancy for now; if the eliminated player was current,
-            // advance to the next alive player.
             var idx = _players.FindIndex(p => p.PlayerId == playerId);
             if (idx < 0) return;
 
             _players[idx].IsEliminated = true;
 
             if (idx == _currentIndex)
-            {
                 AdvanceToNextAlivePlayer();
-            }
         }
+
+        #endregion
+
+        #region Helpers
 
         private void AdvanceToNextAlivePlayer()
         {
-            if (_players.Count == 0)
-                return;
+            if (_players.Count == 0) return;
 
             var start = _currentIndex;
             do
@@ -86,8 +94,9 @@ namespace Gameplay
                     return;
             } while (_currentIndex != start);
 
-            // If we looped and found nobody, all players are eliminated.
             Debug.LogWarning("TurnManager: all players appear eliminated.");
         }
+
+        #endregion
     }
 }

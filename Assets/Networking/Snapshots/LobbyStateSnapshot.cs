@@ -4,6 +4,7 @@ using Utility;
 
 namespace Networking.Snapshots
 {
+    /// <summary>Network-serializable snapshot of the full lobby state, broadcast on every lobby change.</summary>
     [Serializable]
     public struct LobbyStateSnapshot : INetworkSerializable
     {
@@ -35,18 +36,15 @@ namespace Networking.Snapshots
             serializer.SerializeValue(ref phase);
             serializer.SerializeValue(ref maxPlayers);
 
-            // clientIds
             var len = clientIds?.Length ?? 0;
             serializer.SerializeValue(ref len);
             if (serializer.IsReader) clientIds = new ulong[len];
             for (var i = 0; i < len; i++)
                 serializer.SerializeValue(ref clientIds[i]);
 
-            // names + colors use their own custom network serialize
             names.NetworkSerialize(serializer);
             colors.NetworkSerialize(serializer);
 
-            // readyFlags
             var rlen = readyFlags?.Length ?? 0;
             serializer.SerializeValue(ref rlen);
             if (serializer.IsReader) readyFlags = new bool[rlen];

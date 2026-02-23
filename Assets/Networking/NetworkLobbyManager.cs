@@ -39,31 +39,19 @@ namespace Networking
 
         #region Fields
 
-        /// <summary>
-        /// Authoritative list of players on the server, keyed by clientId.
-        /// </summary>
+        // Authoritative player list, keyed by clientId.
         private readonly Dictionary<ulong, LobbyPlayer> _players = new();
-
-        /// <summary>
-        /// Current lobby phase (WaitingForPlayers, ReadyUp, InGame).
-        /// </summary>
         private LobbyPhase _phase = LobbyPhase.ReadyUp;
-
-        /// <summary>
-        /// Fallback maximum players used when relay bootstrap value is not set.
-        /// </summary>
+        // Used when RelayBootstrap.MaxConnections is not set.
         private const int FallbackMaxPlayers = 4;
 
         #endregion
 
-        // UI events are now fired via the central GameEvents bus.
-        // Subscribe to GameEvents.OnLobbyUpdated instead of a local event.
+        // Events fired via GameEvents bus. Subscribe to GameEvents.OnLobbyUpdated.
 
         #region Unity / Network lifecycle
 
-        /// <summary>
-        /// Called when the NetworkBehaviour is spawned. Sets up server callbacks and submits local profile on clients.
-        /// </summary>
+        /// <summary>Registers server callbacks and submits local profile on spawn.</summary>
         public override void OnNetworkSpawn()
         {
             if (IsServer)
@@ -89,9 +77,7 @@ namespace Networking
             SubmitLocalProfile(localProfile);
         }
 
-        /// <summary>
-        /// Called when the NetworkBehaviour is despawned. Removes server callbacks.
-        /// </summary>
+        /// <summary>Removes server callbacks on despawn.</summary>
         public override void OnNetworkDespawn()
         {
             if (IsServer && NetworkManager.Singleton != null)
@@ -140,7 +126,6 @@ namespace Networking
             {
                 Debug.Log($"[Lobby] Client {clientId} removed from lobby.");
 
-                // When someone leaves, we send a snapshot with them removed.
                 BroadcastLobbyState();
             }
         }
@@ -164,11 +149,7 @@ namespace Networking
 
         #region Public API (called by local UI)
 
-        /// <summary>
-        /// Called by the local lobby UI on clients to submit profile info.
-        /// This should be done once when entering the game scene,
-        /// using the profile set on the main menu.
-        /// </summary>
+        /// <summary>Sends local profile to the server. Called once on join.</summary>
         public void SubmitLocalProfile(PlayerProfileData profile)
         {
             if (!IsClient)
@@ -178,10 +159,7 @@ namespace Networking
             SubmitProfileRpc(profile.displayName, ColorUtility.ToHtmlStringRGB(profile.color));
         }
 
-        /// <summary>
-        /// Called by lobby UI when player clicks Ready/Unready.
-        /// This only affects isReady, not profile data.
-        /// </summary>
+        /// <summary>Sends the local player's ready state to the server.</summary>
         public void SetLocalReady(bool ready)
         {
             if (!IsClient)
@@ -201,10 +179,7 @@ namespace Networking
             RequestStartGameRpc();
         }
 
-        /// <summary>
-        /// Called by a host-only UI when they want to end the match and
-        /// go back to a fresh ReadyUp lobby.
-        /// </summary>
+        /// <summary>Host-only: resets the lobby to ReadyUp phase.</summary>
         public void HostRequestResetLobby()
         {
             if (!IsClient)
@@ -235,7 +210,6 @@ namespace Networking
                 color = Color.white;
             }
 
-            // Ensure there is a LobbyPlayer entry for this client.
             if (!_players.TryGetValue(senderId, out var lp))
             {
                 Debug.LogWarning($"[Lobby] SubmitProfile from unknown client {senderId}, auto-creating LobbyPlayer.");
@@ -246,7 +220,6 @@ namespace Networking
             }
             else
             {
-                // Update existing entry's profile
                 lp.profile = new PlayerProfileData(displayName, color);
                 _players[senderId] = lp;
             }
@@ -274,10 +247,7 @@ namespace Networking
             BroadcastLobbyState();
         }
 
-        /// <summary>
-        /// Client -> Server RPC for requesting the host-only start-game action.
-        /// Only the host/owner is permitted to invoke this successfully.
-        /// </summary>
+        /// <summary>Client -> Server: host requests game start. Only owner can invoke.</summary>
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void RequestStartGameRpc(RpcParams rpcParams = default)
         {
@@ -328,7 +298,6 @@ namespace Networking
 
             MatchPlayerRegistry.SetAll(profileMap);
 
-            // Tell the NetworkGameManager (in the same scene) to start the match
             var gameMgr = FindFirstObjectByType<NetworkGameManager>();
             if (gameMgr == null)
             {
@@ -342,10 +311,7 @@ namespace Networking
             BroadcastLobbyState();
         }
 
-        /// <summary>
-        /// Server-side reset back to a fresh ReadyUp state.
-        /// Host will typically call this after a game ends.
-        /// </summary>
+        /// <summary>Resets all players to not-ready and returns lobby to ReadyUp phase.</summary>
         public void ServerResetLobby()
         {
             if (!IsServer)
@@ -369,10 +335,7 @@ namespace Networking
 
         #region RPCs: Server -> Clients (lobby sync + events)
 
-        /// <summary>
-        /// Sends a full lobby snapshot to all clients.
-        /// Used for join/leave, profile submission, phase changes, and full reset.
-        /// </summary>
+        /// <summary>Builds and broadcasts a full lobby snapshot to all clients.</summary>
         private void BroadcastLobbyState()
         {
             if (!IsServer) return;
@@ -423,10 +386,7 @@ namespace Networking
 
         #region Helpers
 
-        /// <summary>
-        /// Applies a full lobby snapshot locally (used by both server and clients).
-        /// Updates internal phase and fires the UI event.
-        /// </summary>
+        /// <summary>Applies a lobby snapshot locally and fires GameEvents.LobbyUpdated.</summary>
         private void ApplyLobbySnapshotLocal(LobbyStateSnapshot snapshot)
         {
             _phase = (LobbyPhase)snapshot.phase;
@@ -435,7 +395,6 @@ namespace Networking
 
             Debug.Log($"[Lobby] Snapshot applied locally. Phase={_phase}, players={clientIds.Length}");
 
-            // Fire via central event bus so any system can react.
             GameEvents.LobbyUpdated(snapshot);
         }
 

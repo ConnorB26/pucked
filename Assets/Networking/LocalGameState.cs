@@ -31,7 +31,7 @@ namespace Networking
         /// <summary>All players in the match, keyed by playerId.</summary>
         public static readonly Dictionary<int, ClientPlayerInfo> Players = new();
 
-        // ---- Setters (called by NetworkGameManager RPC handlers) ----
+        #region Setters
 
         public static void SetLocalPlayerId(int id) => LocalPlayerId = id;
 
@@ -79,9 +79,7 @@ namespace Networking
             Hand.Clear();
         }
 
-        /// <summary>
-        /// Full reset between matches. Call when returning to lobby.
-        /// </summary>
+        /// <summary>Full reset between matches. Call when returning to lobby.</summary>
         public static void Reset()
         {
             LocalPlayerId = -1;
@@ -91,23 +89,22 @@ namespace Networking
             Players.Clear();
         }
 
-        // ---- Helpers ----
+        #endregion
 
-        /// <summary>
-        /// Looks up a player's display name, with fallback for unknown IDs.
-        /// </summary>
+        #region Helpers
+
+        /// <summary>Returns a player's display name, with fallback for unknown IDs.</summary>
         public static string GetPlayerName(int playerId)
         {
             return Players.TryGetValue(playerId, out var info)
                 ? info.DisplayName
                 : $"Player {playerId}";
         }
+
+        #endregion
     }
 
-    /// <summary>
-    /// Lightweight card data for client-side display.
-    /// No reference to CardDefinition (that only exists on the server).
-    /// </summary>
+    /// <summary>Lightweight card data for client-side display. No reference to CardDefinition (server-only).</summary>
     public struct ClientCardData
     {
         public int InstanceId;
@@ -115,9 +112,7 @@ namespace Networking
         public CardCategory Category;
     }
 
-    /// <summary>
-    /// Player info known to all clients (broadcast at game start).
-    /// </summary>
+    /// <summary>Player info known to all clients, broadcast at game start.</summary>
     public struct ClientPlayerInfo
     {
         public int PlayerId;

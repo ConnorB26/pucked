@@ -4,6 +4,10 @@ using Unity.Netcode;
 
 namespace Utility
 {
+    /// <summary>
+    /// FixedString128Bytes array wrapper with INetworkSerializable support.
+    /// Used to transmit string arrays (card names, colors) inside network snapshot structs.
+    /// </summary>
     [Serializable]
     public struct SerializableStringList : INetworkSerializable
     {

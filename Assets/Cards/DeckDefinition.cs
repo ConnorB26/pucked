@@ -5,21 +5,12 @@ using UnityEngine;
 
 namespace Cards
 {
-    /// <summary>
-    /// High-level description of how to build a deck for a match of Puck'd.
-    /// - Save cards (Goalie Save / Defuse equivalents) are defined by rules (players + ratio, variants).
-    /// - All other cards are specified by category & explicit counts.
-    /// Runtime code will read this and actually generate CardInstances for a specific player count.
-    /// </summary>
+    /// <summary>ScriptableObject defining deck composition: save card rules and per-category card counts.</summary>
     [CreateAssetMenu(fileName = "DeckDefinition", menuName = "Puckd/Deck / Deck Definition")]
     public class DeckDefinition : ScriptableObject
     {
         public string deckName = "Default Puck'd Deck";
         [TextArea] public string description;
-
-        // --------------------------------------------------------------------
-        // Save card settings (Defuse / Goalie Save equivalents)
-        // --------------------------------------------------------------------
 
         [Tooltip("Which category counts as a 'save' card (Defuse / Goalie Save equivalent).")]
         public CardCategory saveCategory = CardCategory.GoalieSave;
@@ -29,20 +20,8 @@ namespace Cards
                  "Total saves = players + floor(players * extraRatio).")]
         public float extraSavesPerPlayerRatio = 0.5f;
 
-        /// <summary>
-        /// Available save card variations. At deck-build time, the system will generate
-        /// the required number of saves and for each save choose a variant based
-        /// on these weights.
-        /// 
-        /// Weight is interpreted as a percent [0–100], and all weights should sum
-        /// to <= 100. The remaining probability (if any) can be treated as
-        /// "fallback" or simply unused, depending on how you implement the builder.
-        /// </summary>
+        /// <summary>Save card variants weighted by selection probability. All weights should sum to ≤ 100%.</summary>
         public List<SaveVariant> saveVariants = new();
-
-        // --------------------------------------------------------------------
-        // Non-save card composition
-        // --------------------------------------------------------------------
 
         [Tooltip("All cards that are NOT part of the save category.\n" +
                  "Save cards are controlled by the rules above.")]
@@ -51,10 +30,7 @@ namespace Cards
         /// <summary>Total non-save cards across all categories.</summary>
         public int TotalBaseCardCount => categories?.Sum(c => c.TotalCount) ?? 0;
 
-        /// <summary>
-        /// Expected number of save cards for a given player count:
-        /// players + floor(players * extraRatio).
-        /// </summary>
+        /// <summary>Expected save count: players + floor(players * extraRatio).</summary>
         public int GetExpectedSaveCount(int playerCount)
         {
             if (playerCount <= 0) return 0;
@@ -62,18 +38,12 @@ namespace Cards
             return playerCount + extras;
         }
 
-        /// <summary>
-        /// Sum of save variant weights (treated as percentages).
-        /// Should be <= 100 for a well-formed config.
-        /// </summary>
+        /// <summary>Sum of save variant weights. Should be ≤ 100 for a valid config.</summary>
         public float TotalSaveWeight =>
             saveVariants?.Where(v => v != null && v.card != null && v.weight > 0f)
                 .Sum(v => v.weight) ?? 0f;
 
-        /// <summary>
-        /// Enumerates non-save cards with their counts.
-        /// Runtime deck-building code can use this to generate instances.
-        /// </summary>
+        /// <summary>Enumerates non-save card definitions and their counts for deck building.</summary>
         public IEnumerable<(CardDefinition card, int count)> EnumerateBaseCardCounts()
         {
             if (categories == null) yield break;
@@ -94,18 +64,12 @@ namespace Cards
             }
         }
 
-        /// <summary>
-        /// Expected total deck size for a given player count, including saves.
-        /// </summary>
+        /// <summary>Total expected deck size for a given player count, including saves.</summary>
         public int GetExpectedTotalCardCount(int playerCount)
         {
             return TotalBaseCardCount + GetExpectedSaveCount(playerCount);
         }
     }
-
-    // ------------------------------------------------------------------------
-    // Supporting data types
-    // ------------------------------------------------------------------------
 
     [Serializable]
     public class SaveVariant

@@ -6,20 +6,18 @@ using UnityEngine;
 
 namespace Editor
 {
+    /// <summary>Custom inspector for DeckDefinition. Shows deck composition, save card rules, and a live totals summary.</summary>
     [CustomEditor(typeof(DeckDefinition))]
     public class DeckDefinitionEditor : UnityEditor.Editor
     {
-        // Props
-        SerializedProperty _deckNameProp;
-        SerializedProperty _descriptionProp;
+        private SerializedProperty _deckNameProp;
+        private SerializedProperty _descriptionProp;
+        private SerializedProperty _saveCategoryProp;
+        private SerializedProperty _extraSaveRatioProp;
+        private SerializedProperty _saveVariantsProp;
+        private SerializedProperty _categoriesProp;
 
-        SerializedProperty _saveCategoryProp;
-        SerializedProperty _extraSaveRatioProp;
-        SerializedProperty _saveVariantsProp;
-
-        SerializedProperty _categoriesProp;
-
-        void OnEnable()
+        private void OnEnable()
         {
             _deckNameProp = serializedObject.FindProperty("deckName");
             _descriptionProp = serializedObject.FindProperty("description");
@@ -58,11 +56,7 @@ namespace Editor
             serializedObject.ApplyModifiedProperties();
         }
 
-        // --------------------------------------------------------------------
-        // Header / Section header
-        // --------------------------------------------------------------------
-
-        void DrawHeader(DeckDefinition deck)
+        private void DrawHeader(DeckDefinition deck)
         {
             EditorGUILayout.Space(4);
 
@@ -76,7 +70,7 @@ namespace Editor
             EditorGUILayout.Space(4);
         }
 
-        void DrawSectionHeader(string label)
+        private void DrawSectionHeader(string label)
         {
             var rect = EditorGUILayout.GetControlRect(false, 22f);
             EditorGUI.DrawRect(rect, new Color(0.14f, 0.14f, 0.18f));
@@ -93,11 +87,7 @@ namespace Editor
             GUILayout.Space(4);
         }
 
-        // --------------------------------------------------------------------
-        // Save rules section
-        // --------------------------------------------------------------------
-
-        void DrawSaveRulesSection(DeckDefinition deck)
+        private void DrawSaveRulesSection(DeckDefinition deck)
         {
             EditorGUILayout.PropertyField(_saveCategoryProp);
 
@@ -127,7 +117,7 @@ namespace Editor
             DrawSaveVariantsList(deck);
         }
 
-        void DrawSaveVariantsList(DeckDefinition deck)
+        private void DrawSaveVariantsList(DeckDefinition deck)
         {
             EditorGUILayout.LabelField("Save Variants", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
@@ -216,11 +206,7 @@ namespace Editor
             }
         }
 
-        // --------------------------------------------------------------------
-        // Non-save category tools & list
-        // --------------------------------------------------------------------
-
-        void DrawCategoryTools(DeckDefinition deck)
+        private void DrawCategoryTools(DeckDefinition deck)
         {
             EditorGUILayout.BeginHorizontal();
 
@@ -243,7 +229,7 @@ namespace Editor
                 MessageType.Info);
         }
 
-        void AddMissingCategories(DeckDefinition deck)
+        private void AddMissingCategories(DeckDefinition deck)
         {
             var existing = new HashSet<CardCategory>();
 
@@ -266,7 +252,7 @@ namespace Editor
             }
         }
 
-        void DrawCategoriesList(DeckDefinition deck)
+        private void DrawCategoriesList(DeckDefinition deck)
         {
             if (_categoriesProp.arraySize == 0)
             {
@@ -284,7 +270,7 @@ namespace Editor
             }
         }
 
-        void DrawCategoryEntry(DeckDefinition deck, SerializedProperty entryProp, int index)
+        private void DrawCategoryEntry(DeckDefinition deck, SerializedProperty entryProp, int index)
         {
             var catProp = entryProp.FindPropertyRelative("category");
             var cardsProp = entryProp.FindPropertyRelative("cards");
@@ -337,7 +323,7 @@ namespace Editor
             EditorGUILayout.EndVertical();
         }
 
-        void DrawCardSlotsList(DeckDefinition deck, SerializedProperty cardsProp)
+        private void DrawCardSlotsList(DeckDefinition deck, SerializedProperty cardsProp)
         {
             for (var i = 0; i < cardsProp.arraySize; i++)
             {
@@ -354,7 +340,6 @@ namespace Editor
                     0,
                     EditorGUILayout.IntField(countProp.intValue, GUILayout.Width(50)));
 
-                // If this card is of the save category, hint that it will be ignored.
                 var card = cardProp.objectReferenceValue as CardDefinition;
                 if (card != null && card.category == deck.saveCategory)
                 {
@@ -376,7 +361,6 @@ namespace Editor
                 EditorGUILayout.EndHorizontal();
             }
 
-            // Add button
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("+ Add Card Variant", GUILayout.Width(160)))
@@ -390,11 +374,7 @@ namespace Editor
             EditorGUILayout.EndHorizontal();
         }
 
-        // --------------------------------------------------------------------
-        // Totals / summary
-        // --------------------------------------------------------------------
-
-        void DrawTotals(DeckDefinition deck)
+        private void DrawTotals(DeckDefinition deck)
         {
             EditorGUILayout.LabelField("Deck Totals / Examples", EditorStyles.boldLabel);
             EditorGUILayout.BeginVertical("HelpBox");

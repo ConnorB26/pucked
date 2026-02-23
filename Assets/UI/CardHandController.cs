@@ -54,14 +54,12 @@ namespace UI
 
         private void RebuildHand()
         {
-            // Destroy existing card UI instances.
             foreach (var card in _cards.Where(card => card != null))
                 Destroy(card.gameObject);
 
             _cards.Clear();
             _cardCategories.Clear();
 
-            // Spawn a CardUI for each card in the local player's hand.
             foreach (var data in LocalGameState.Hand)
             {
                 var cardUI = Instantiate(cardPrefab, handParent);

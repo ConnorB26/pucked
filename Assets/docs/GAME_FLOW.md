@@ -1,370 +1,194 @@
-# Puck'd - Game Flow & State Machine
+# Game Flow
 
-This document covers the complete lifecycle of a Puck'd session, from launching the game through match completion, including all branching cases.
+## Connection & Lobby
 
-## High-Level State Machine
+### Hosting
 
-```
-[Main Menu] --> [Hosting/Joining] --> [Lobby] --> [In-Game] --> [Game Over] --> [Lobby]
-                                        ^                                        |
-                                        +----------------------------------------+
+1. Player enters a name, picks a color, and presses **Host**.
+2. `RelayBootstrap.StartHostWithRelay()` initializes Unity Services, authenticates anonymously, creates a Relay allocation, and starts the NetworkManager as host.
+3. A join code is generated and displayed. The game scene loads and the lobby UI appears.
 
-[Main Menu] <-- disconnect (client) or close lobby (host)
-```
+### Joining
 
-## Phase 1: Main Menu
+1. Player enters a name, picks a color, enters the join code, and presses **Join**.
+2. `RelayBootstrap.StartClientWithRelay()` joins the Relay allocation using the code and starts the NetworkManager as client.
+3. The client follows the host to the current scene automatically.
 
-**Scene:** `MainMenuScene`
-**Controller:** `MainMenuController`
+### Lobby Sync
 
-### Player Profile
-- On `Start()`, loads saved profile from `PlayerPrefs` via `LocalPlayerProfile.LoadOrDefault()`
-- Default profile: random name like "Player 472", blue-ish color `(0.2, 0.7, 1.0)`
-- Player can edit name and pick color via HSV `ColorPicker`
-- Profile is saved to `PlayerPrefs` when hosting or joining
+When a client connects, they submit their profile via `SubmitProfileRpc` (client -> server). The server stores it and broadcasts a `LobbyStateSnapshot` to all clients whenever lobby state changes (join, leave, ready toggle). Each client rebuilds the player list UI from the snapshot.
 
-### Host Flow
-1. Player clicks **Host**
-2. `MainMenuController.OnClickHost()`:
-   - Saves profile to `PlayerPrefs`
-   - `RelayBootstrap.StartHostWithRelay(maxConnections)`:
-     - Initializes Unity Services (if needed)
-     - Signs in anonymously (if needed)
-     - Creates Relay allocation
-     - Configures UTP transport with host relay data
-     - Gets join code from Relay
-     - Starts `NetworkManager` as host
-     - Stores `LastJoinCode` and `MaxConnections` statically
-   - Loads lobby scene via `NetworkManager.SceneManager.LoadScene()`
+### Starting the Game
 
-### Join Flow
-1. Player enters join code and clicks **Join**
-2. `MainMenuController.OnClickJoin()`:
-   - Saves profile to `PlayerPrefs`
-   - `RelayBootstrap.StartClientWithRelay(joinCode)`:
-     - Initializes Unity Services (if needed)
-     - Signs in anonymously (if needed)
-     - Joins Relay allocation with code
-     - Configures UTP transport with client relay data
-     - Starts `NetworkManager` as client
-   - Client automatically follows host into the current scene (Netcode scene management)
+1. Host presses **Start Game** -> `RequestStartGameRpc`.
+2. Server validates all players are ready.
+3. Server maps each clientId to a sequential playerId (0, 1, 2...).
+4. Server creates `CoreGameManager` (plain C#, not a MonoBehaviour) and calls `Init()`:
+   - Builds the deck from `DeckDefinition` (Goalie Save count scales with player count, Puck'd count = players - 1).
+   - Deals starting hands: each player gets 1 reserved Goalie Save, then draws to `startingHandSize`. Puck'd cards are skipped during the deal (returned to deck, shuffled in after).
+5. Server sends initial sync RPCs to all clients in order:
+   - `AssignPlayerIdRpc` -- tells each client their playerId
+   - `SyncHandRpc` -- each player's starting hand
+   - `RegisterPlayerRpc` -- all player names and colors
+   - `NotifyTurnChangedRpc` -- who goes first
+   - `GameReadyRpc` -- sent last, signals the UI to show the game HUD
 
-### Error Cases
-- **Host fails to create Relay allocation** - Logs error, stays on main menu
-- **Client enters invalid join code** - `JoinAllocationAsync` throws, logs error, stays on main menu
-- **Unity Services fail to initialize** - `EnsureServicesAsync` throws, caught by caller
+## Turn Structure
 
-## Phase 2: Lobby
-
-**Scene:** `LobbyScene` (loaded by host, clients follow)
-**Controllers:** `NetworkLobbyManager` (authority), `LobbyUIController` (display)
-
-### Lobby Phases (server-side enum)
-```
-WaitingForPlayers --> ReadyUp --> InGame
-                       ^            |
-                       +---(reset)--+
-```
-
-The lobby starts in `ReadyUp` phase.
-
-### Connection Flow
-
-**When host spawns:**
-1. `NetworkLobbyManager.OnNetworkSpawn()` (server path):
-   - Sets phase to `ReadyUp`
-   - Registers `OnClientConnected` / `OnClientDisconnected` callbacks
-   - Adds host as first player with placeholder profile
-2. `OnNetworkSpawn()` (client path, runs on host too):
-   - Loads local profile from `PlayerPrefs`
-   - Sends `SubmitProfileRpc` to server with name + color
-
-**When a client connects:**
-1. Server `OnClientConnected(clientId)`:
-   - If game is in progress (`InGame` phase), **rejects** client via `DisconnectClient()`
-   - Otherwise adds client with placeholder profile
-2. Client sends `SubmitProfileRpc` with real profile data
-3. Server updates profile and broadcasts `LobbyStateSnapshot` to all clients
-
-**When a client disconnects from lobby:**
-1. Server `OnClientDisconnected(clientId)`:
-   - Removes player from dictionary
-   - Broadcasts updated `LobbyStateSnapshot`
-
-### Ready Flow
-1. Player clicks **Ready** button
-2. `LobbyUIController.OnClickReady()` toggles local state
-3. Sends `ToggleReadyRpc(bool)` to server
-4. Server updates player's ready flag
-5. Server broadcasts `LobbyStateSnapshot`
-6. All clients rebuild UI from snapshot:
-   - Player rows show name, color swatch, ready/unready status
-   - Host's **Start** button enables only when all players are ready
-
-### Start Game Flow
-1. Host clicks **Start Game** (only visible to host, only enabled when all ready)
-2. `LobbyUIController.OnClickStartGame()` -> `NetworkLobbyManager.HostRequestStartGame()`
-3. `RequestStartGameRpc` (owner-only permission) -> `TryStartGameOnServer()`:
-   - Validates phase is `ReadyUp`
-   - Validates all players are ready
-   - Sets phase to `InGame`
-   - Copies player profiles to `MatchPlayerRegistry` (static)
-   - Finds `NetworkGameManager` in scene and calls `ServerStartGame()`
-4. `NetworkGameManager.ServerStartGame()`:
-   - Maps each connected clientId to a sequential playerId (0, 1, 2...)
-   - Creates `CoreGameManager` and calls `Init(config, resolver, players)`
-   - Subscribes to core events (elimination, peek, game over)
-   - Sends `AssignPlayerIdRpc` to each client with their playerId
-   - Syncs each player's starting hand via `SyncHandRpc`
-   - Broadcasts `NotifyTurnChangedRpc` with first player's ID
-5. Lobby broadcasts updated snapshot (phase = InGame)
-
-## Phase 3: In-Game
-
-**Authority:** `CoreGameManager` (server-only, pure C#)
-**Network Bridge:** `NetworkGameManager` (RPCs)
-
-### Game Initialization (Server-Side)
-
-`CoreGameManager.Init()`:
-1. Phase -> `Setup`
-2. Creates `DeckManager` and builds deck from `DeckDefinition`:
-   - Adds all non-save category cards (count defined per card in definition)
-   - Generates save cards: `playerCount + floor(playerCount * extraSavesPerPlayerRatio)`
-   - Save variants chosen by weighted random selection
-   - Reserves 1 save per player for starting hands
-   - Remaining saves shuffled into draw pile (Fisher-Yates)
-3. Creates `TurnManager` with player list (starts at player 0)
-4. Creates `GameContext` (bundles config + deck + turn + players)
-5. Creates `GameActionExecutor` (reads/writes via GameContext)
-6. Wires executor events -> core events -> network RPCs
-7. Deals starting hands:
-   - Each player gets 1 reserved save card
-   - Then draws from deck until hand reaches `startingHandSize` (default 5)
-8. Phase -> `InGame`
-
-### Turn Structure
-
-**Current implementation:** Players play one card per turn, then the turn advances and the *next* player draws.
+A turn has two phases: an optional play phase and a mandatory draw phase.
 
 ```
-[Player's Turn]
+[Player's Turn Begins]
     |
-    +--> Player plays a card (RequestPlayCardRpc)
-    |        |
-    |        +--> Server validates (correct player, correct turn, card in hand)
-    |        +--> CoreGameManager.PlayCard():
-    |                1. Remove card from hand
-    |                2. Create EffectContext (owner, target=0, cardId)
-    |                3. Queue effects on EffectResolver stack
-    |                4. ResolveAll() -> list of GameActions
-    |                5. GameActionExecutor.ApplyActions()
-    |                6. HandleEndOfTurn()
+    +-- Play Phase (optional, repeatable)
+    |     Player plays a card -> server resolves effects
+    |     Player can play multiple cards before ending turn
     |
-    +--> HandleEndOfTurn():
-            1. TurnManager.EndTurn() (advance or consume extra turn)
-            2. If drawAtEndOfTurn: new current player draws drawPerTurn cards
-            3. CheckForGameOver()
+    +-- Draw Phase (mandatory)
+          Player clicks End Turn -> draws from deck
+          Drawing may trigger Puck'd elimination
+          Turn advances to next player
 ```
 
-**Note:** The current implementation has a design gap - players play a card and *then* the turn ends. In Exploding Kittens, the typical flow is: play any number of cards on your turn, then draw to end your turn. The draw is the dangerous action (you might draw the elimination card). Currently, the draw happens automatically after the turn advances, not as a player-initiated action.
+### Playing a Card
 
-### Card Play Cases
+1. **Client** sends `RequestPlayCardRpc(cardInstanceId, targetPlayerId)` to server.
+2. **Server** validates:
+   - Game is in the `InGame` phase.
+   - It is this player's turn.
+   - The card exists in the player's hand.
+3. **Server** calls `CoreGameManager.PlayCard()`:
+   - Removes the card from the player's hand.
+   - Creates an `EffectContext` (source player, target player, game context).
+   - Queues the card's effects onto the `EffectResolver` stack.
+   - `ResolveAll()` pops effects LIFO and produces a list of `GameAction` structs.
+   - `GameActionExecutor.ApplyActions()` executes each action against game state.
+4. **Server** broadcasts results:
+   - `CardPlayedRpc(playerId, cardName, category)` -- notifies all clients.
+   - `SyncHandRpc` -- updates the playing client's hand.
+   - Action-specific RPCs (e.g., `PeekResultRpc` for Peek, `NotifyTurnChangedRpc` if Skip/Attack changed the turn).
+5. **Server** checks for game over after every action.
 
-Each card category triggers different effects:
+### Ending a Turn (Drawing)
 
-#### Puck'd (Elimination Card)
-```
-Player plays Puck'd
-  -> EliminationEffect -> RequestElimination action
-  -> GameActionExecutor.HandleEliminationRequest():
-       - Victim = target (or self if target=0)
-       - Mark player.IsEliminated = true
-       - TurnManager.OnPlayerEliminated() (advance if current)
-       - If discardHandOnElimination: discard hand to discard pile
-       - Fire OnPlayerEliminated event
-  -> Network: PlayerEliminatedRpc broadcast
-  -> CheckForGameOver()
-```
+1. **Client** sends `RequestEndTurnRpc()` to server.
+2. **Server** validates it is this player's turn.
+3. **Server** calls `CoreGameManager.PlayerEndTurn()`:
+   - Draws `drawPerTurn` cards (default 1) from the deck.
+   - **If Puck'd is drawn:**
+     - Check if player has a Goalie Save in hand.
+     - **Yes:** Auto-consume the Goalie Save (remove from hand, discard), return Puck'd to a random position in the deck. Broadcast `GoalieSaveUsedRpc`.
+     - **No:** Player is eliminated. Broadcast `PlayerEliminatedRpc`.
+   - **If normal card drawn:** Add to player's hand.
+   - Advance turn to next player.
+4. **Server** syncs:
+   - `SyncHandRpc` -- updated hand (card drawn or Goalie Save consumed).
+   - `NotifyTurnChangedRpc` -- next player's turn.
 
-**Current gap:** Puck'd cards are currently played from hand like any other card. In Exploding Kittens, the elimination card is drawn from the deck, not played from hand. This is a fundamental game flow difference that needs addressing.
+## Card Effects in Detail
 
-#### Goalie Save (Prevent Elimination)
-```
-Player plays Goalie Save
-  -> PreventEliminationEffect -> PreventElimination action
-  -> GameActionExecutor: logs but takes no state action
-  -> Turn advances normally
-```
+### Attack
 
-**Current gap:** PreventElimination is a no-op in the executor. The intended flow is reactive: when a player draws a Puck'd card, they should have a window to play a Goalie Save to prevent elimination. This reactive card play system does not exist yet.
+Adds extra turns to the **next** player. When the current player ends their turn, the next player must take multiple consecutive turns (each ending with a draw). Extra turns decrement one at a time. The attacking player's turn ends immediately via skip.
 
-#### Cancel (Nope)
-```
-Player plays Cancel
-  -> CancelEffect -> CancelLastEffect action
-  -> EffectResolver: removes last action from output list
-  -> Remaining actions applied normally
-```
+### Skip
 
-**Note:** Cancel currently only works within the same card's effect stack. Cross-turn cancellation (canceling another player's card play) is not implemented.
+Ends the current player's turn without drawing. If the player has pending extra turns, the skip consumes one extra turn instead of advancing to the next player.
 
-#### Attack
-```
-Player plays Attack
-  -> AttackEffect -> ForceExtraTurns action (default: 2)
-  -> GameActionExecutor: TurnManager.AddExtraTurnsForNextPlayer(2)
-  -> On next EndTurn(), extra turns are consumed before advancing
-```
+### Peek
 
-**Behavior:** When the next player's turn ends, `_pendingExtraTurns` decrements. While > 0, the same player takes another turn instead of advancing. Once extra turns are exhausted, normal rotation resumes.
+Sends the top N card names/categories from the deck to the requesting player only via `PeekResultRpc`. Does not end the turn.
 
-#### Skip
-```
-Player plays Skip
-  -> SkipEffect -> SkipTurn action
-  -> GameActionExecutor: TurnManager.SkipCurrentPlayer()
-  -> Immediately advances to next alive player
-```
+### Shuffle
 
-#### Peek
-```
-Player plays Peek
-  -> PeekEffect -> PeekCards action (default: 3)
-  -> GameActionExecutor.HandlePeek():
-       - DeckManager.PeekTop(3) -> top 3 CardInstances
-       - Converts to CardDefinitions
-       - Fires OnPeekRequested event
-  -> Network: PeekResultRpc sent ONLY to peeking player's client
-```
+Shuffles the draw pile (Fisher-Yates). Does not end the turn.
 
-#### Shuffle
-```
-Player plays Shuffle
-  -> ShuffleEffect -> ShuffleDeck action
-  -> GameActionExecutor: DeckManager.Shuffle() (Fisher-Yates)
-```
+### Cancel
 
-### Turn Advancement Logic
+Removes the most recently resolved effect from the action list during stack resolution. Only works within the same card's effect stack.
 
-`TurnManager.EndTurn()`:
-```
-if _pendingExtraTurns > 0:
-    _pendingExtraTurns--
-    return (same player goes again)
-else:
-    AdvanceToNextAlivePlayer()
-        -> circular scan: (_currentIndex + 1) % count
-        -> skip eliminated players
-        -> if all eliminated: log warning (shouldn't reach here)
-```
+### Goalie Save
 
-### Player Disconnection (Mid-Game)
+Not manually playable. Auto-consumed reactively when a player draws a Puck'd card. The Puck'd card is returned to the deck at a random position and the deck is reshuffled.
 
-1. `NetworkManager.OnClientDisconnectCallback` fires on server
-2. `NetworkGameManager.OnClientDisconnected(clientId)`:
-   - Looks up playerId from clientId map
-   - Removes from both mapping dictionaries
-   - Calls `CoreGameManager.HandlePlayerLeft(playerId)`:
-     - Returns player's hand cards to draw pile and shuffles
-     - Marks player eliminated
-     - `TurnManager.OnPlayerEliminated()` (advance if current)
-     - Fires `PlayerEliminated` event
-     - `CheckForGameOver()`
-   - Syncs remaining players' hands
-   - Broadcasts `PlayerEliminatedRpc`
-   - If game still in progress: broadcasts turn change
-   - If game over: logs (TODO: proper handling)
+### Puck'd
 
-### Game Over Detection
+Not manually playable. Exists only in the draw pile. When drawn, triggers the Goalie Save check described above.
 
-`CoreGameManager.CheckForGameOver()`:
-- Only runs if `lastPlayerStandingWins` is enabled
-- Counts non-eliminated players
-- If <= 1 alive:
-  - Phase -> `GameOver`
-  - Winner = last alive player's ID (or -1 if none)
-  - Fires `GameOver` event
+## Effect Resolution
 
-### Network: Game Over Flow
+Effects use a stack-based LIFO resolver:
 
-1. `NetworkGameManager.OnCoreGameOver(winnerPlayerId)`:
-   - Sends `GameOverRpc(winnerPlayerId)` to **everyone** (including host)
-   - Calls `ServerEndGame()` (unsubscribes events, clears mappings, resets state)
-   - Finds `NetworkLobbyManager` and calls `ServerResetLobby()`
-2. `GameOverRpc` on each client:
-   - Determines if local player won
-   - Looks up winner's profile from `MatchPlayerRegistry`
-   - Shows `GameUIController.ShowGameOver(isWinner, winnerProfile, isHost)`
+1. A card's effects are queued onto the stack in list order.
+2. `ResolveAll()` pops each effect and calls `Resolve(context)`, producing `GameAction` structs.
+3. `CancelLastEffect` (from Cancel cards) removes the most recent action from the output list.
+4. The final list of `GameAction` structs is passed to `GameActionExecutor.ApplyActions()`.
 
-## Phase 4: Game Over / Post-Game
+Action types: `SkipCurrentPlayer`, `AddExtraTurns`, `RequestElimination`, `PreventElimination`, `PeekAtDeck`, `ShuffleDeck`, `CancelLastEffect`.
 
-**Controller:** `GameUIController` (singleton)
+## Client-Side State
 
-### Display
-- Game over panel shows "You won!" or "Player X wins!"
-- Host sees **Rematch** and **Close Lobby** buttons
-- Clients see nothing (no buttons)
+Clients never run game logic. All state comes from server RPCs.
 
-### Rematch Flow
-1. Host clicks **Rematch**
-2. `GameUIController.OnClickRematch()`:
-   - Finds `NetworkLobbyManager`, calls `ServerResetLobby()`
-   - Hides game over panel
-3. `ServerResetLobby()`:
-   - Phase -> `ReadyUp`
-   - All players' ready flags -> false
-   - Clears `MatchPlayerRegistry`
-   - Broadcasts `LobbyStateSnapshot`
-4. Lobby UI rebuilds, players can ready up again
+`LocalGameState` (static) holds:
+- `LocalPlayerId` -- this client's player ID
+- `CurrentTurnPlayerId` -- whose turn it is
+- `Hand` -- list of cards (instanceId, name, category)
+- `Players` -- dictionary of all players (name, color, elimination status)
+- `IsMyTurn` / `IsGameActive` -- derived properties
 
-### Close Lobby Flow
-1. Host clicks **Close Lobby**
-2. `GameUIController.OnClickCloseLobby()`:
-   - `NetworkManager.Singleton.Shutdown()` (disconnects all clients)
-   - Loads main menu scene
-3. On each client: `NetworkDisconnectHandler` detects disconnect, loads main menu scene
+`GameEvents` (static event bus) fires events that UI controllers subscribe to:
+- `OnGameStarted` -- initial sync complete, show HUD
+- `OnLocalHandUpdated` -- hand changed
+- `OnTurnChanged(playerId)` -- turn advanced
+- `OnCardPlayed(playerId, cardName, category)` -- any player played a card
+- `OnPeekResult(cardNames[])` -- peek results received
+- `OnPlayerEliminated(playerId)` -- player eliminated
+- `OnGoalieSaveUsed(playerId)` -- Goalie Save blocked a Puck'd
+- `OnGameOver(winnerId, winnerProfile)` -- game ended
 
-## State Diagram Summary
+**UI pattern:** RPC handler -> update `LocalGameState` -> fire `GameEvent` -> UI controller reacts.
+
+## Sequence Diagram: Card Play
 
 ```
-CoreGameManager.Phase:
-  None ----[Init()]----> Setup ----[DealStartingHands()]----> InGame
-  InGame --[CheckForGameOver(), 1 player left]-------------> GameOver
-
-NetworkLobbyManager.LobbyPhase:
-  ReadyUp ----[TryStartGameOnServer()]----> InGame
-  InGame  ----[ServerResetLobby()]-------->  ReadyUp
-
-GameUIController:
-  Hidden  ----[ShowGameOver()]----> Visible
-  Visible ----[OnClickRematch()]-> Hidden (lobby resets)
-  Visible ----[OnClickCloseLobby()]-> Main Menu (network shutdown)
-```
-
-## Sequence Diagram: Full Card Play
-
-```
-Client                    Server (NetworkGameManager)       CoreGameManager
+Client                    NetworkGameManager (Server)      CoreGameManager
   |                              |                              |
   |--RequestPlayCardRpc(cardId)->|                              |
   |                              |--validate turn & hand------->|
-  |                              |                              |
-  |                              |      PlayCard(playerId, cardId)
-  |                              |                              |
+  |                              |      PlayCard(playerId, id)  |
   |                              |         remove from hand     |
   |                              |         queue effects        |
   |                              |         resolve all          |
   |                              |         apply actions        |
-  |                              |         handle end of turn   |
-  |                              |         (advance turn, draw) |
-  |                              |         check game over      |
-  |                              |                              |
   |                              |<----events (elim, peek, etc)-|
+  |<---CardPlayedRpc------------|                              |
+  |<---SyncHandRpc--------------|                              |
+  |<---NotifyTurnChangedRpc-----|  (if turn changed)           |
+  |<---PeekResultRpc------------|  (if peek, targeted)         |
   |                              |                              |
-  |<---SyncHandRpc (all players)-|                              |
-  |<---NotifyTurnChangedRpc------|                              |
-  |<---PlayerEliminatedRpc-------|  (if applicable)             |
-  |<---PeekResultRpc------------|  (if applicable, targeted)   |
-  |<---GameOverRpc--------------|  (if applicable)             |
+  |--RequestEndTurnRpc---------->|                              |
+  |                              |      PlayerEndTurn()         |
+  |                              |         draw cards           |
+  |                              |         check Puck'd         |
+  |                              |         advance turn         |
+  |<---SyncHandRpc--------------|                              |
+  |<---NotifyTurnChangedRpc-----|                              |
+  |<---PlayerEliminatedRpc------|  (if Puck'd drawn, no save)  |
+  |<---GameOverRpc--------------|  (if 1 player left)          |
 ```
+
+## Elimination & Game Over
+
+When a player is eliminated:
+1. `PlayerRuntime.isEliminated` is set to true.
+2. `TurnManager.OnPlayerEliminated()` removes them from the turn order.
+3. If the eliminated player was the current turn holder, the turn advances.
+4. `PlayerEliminatedRpc` is broadcast to all clients.
+5. Game-over check: if only 1 player remains, `GameOverRpc(winnerId)` is broadcast and the game-over panel shows the winner.
+
+## Rematch & Disconnect
+
+- **Rematch:** Host clicks Rematch on the game-over panel. Server resets `CoreGameManager`, re-deals hands, and re-syncs all clients. Lobby returns to `ReadyUp` phase.
+- **Close Lobby:** Host clicks Close Lobby, `NetworkManager.Shutdown()` disconnects everyone, all clients return to main menu.
+- **Disconnect:** `NetworkDisconnectHandler` detects client disconnects. If mid-game, the player is eliminated, their cards return to the deck, and the turn advances if needed.

@@ -1,10 +1,10 @@
-﻿using Actions;
+using Actions;
 using Effects.Base;
-using Resolver;
 using UnityEngine;
 
 namespace Effects.Implementations
 {
+    /// <summary>Blocks the next elimination. Auto-consumed when Goalie Save triggers on a Puck'd draw.</summary>
     [CreateAssetMenu(menuName = "Puckd/Effects/Prevent Elimination")]
     public class PreventEliminationEffect : CardEffect
     {

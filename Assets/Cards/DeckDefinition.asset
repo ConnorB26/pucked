@@ -14,8 +14,29 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Cards.DeckDefinition
   deckName: Default Puck'd Deck
   description: 
+  saveCategory: 1
+  extraSavesPerPlayerRatio: 0.5
+  saveVariants:
+  - card: {fileID: 11400000, guid: 8c5a435a2a4431845b37adc8104d07d1, type: 2}
+    weight: 100
   categories:
+  - category: 0
+    cards:
+    - card: {fileID: 11400000, guid: 4fa17cc41adae564da55677b30472a9a, type: 2}
+      count: 4
   - category: 3
     cards:
     - card: {fileID: 11400000, guid: 8019f19d68801de4fb794984a85d98ff, type: 2}
-      count: 10
+      count: 6
+  - category: 4
+    cards:
+    - card: {fileID: 11400000, guid: 471bf1df46b4e92418592e48e5999c5a, type: 2}
+      count: 6
+  - category: 5
+    cards:
+    - card: {fileID: 11400000, guid: 29cf9fa72909a4246b94bbc130bc5089, type: 2}
+      count: 6
+  - category: 6
+    cards:
+    - card: {fileID: 11400000, guid: 61001f9e98145a94594a208d2e3825e2, type: 2}
+      count: 6

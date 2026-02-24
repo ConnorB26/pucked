@@ -5,36 +5,48 @@ using UnityEngine;
 
 namespace Cards
 {
-    /// <summary>
-    /// A specific deck / ruleset configuration for a match of Puck'd.
-    /// Uses references to CardDefinition assets and per-card counts.
-    /// </summary>
+    /// <summary>ScriptableObject defining deck composition: save card rules and per-category card counts.</summary>
     [CreateAssetMenu(fileName = "DeckDefinition", menuName = "Puckd/Deck / Deck Definition")]
     public class DeckDefinition : ScriptableObject
     {
-        [Header("Deck Info")] public string deckName = "Default Puck'd Deck";
+        public string deckName = "Default Puck'd Deck";
         [TextArea] public string description;
 
-        /// <summary>
-        /// Grouped composition by high-level category (Puckd, GoalieSave, Attack, etc).
-        /// </summary>
+        [Tooltip("Which category counts as a 'save' card (Defuse / Goalie Save equivalent).")]
+        public CardCategory saveCategory = CardCategory.GoalieSave;
+
+        [Min(0)]
+        [Tooltip("Extra saves as a ratio of player count.\n" +
+                 "Total saves = players + floor(players * extraRatio).")]
+        public float extraSavesPerPlayerRatio = 0.5f;
+
+        /// <summary>Save card variants weighted by selection probability. All weights should sum to ≤ 100%.</summary>
+        public List<SaveVariant> saveVariants = new();
+
+        [Tooltip("All cards that are NOT part of the save category.\n" +
+                 "Save cards are controlled by the rules above.")]
         public List<CategoryEntry> categories = new();
 
-        // ---- Convenience helpers for runtime / editor ----
+        /// <summary>Total non-save cards across all categories.</summary>
+        public int TotalBaseCardCount => categories?.Sum(c => c.TotalCount) ?? 0;
 
-        /// <summary>Total number of cards across all categories.</summary>
-        public int TotalCardCount =>
-            categories?.Sum(c => c.TotalCount) ?? 0;
-
-        /// <summary>
-        /// Returns a flat list with each card repeated 'count' times.
-        /// Useful when actually building the deck at game start.
-        /// </summary>
-        public List<CardDefinition> BuildDeckList()
+        /// <summary>Expected save count: players + floor(players * extraRatio).</summary>
+        public int GetExpectedSaveCount(int playerCount)
         {
-            var result = new List<CardDefinition>();
+            if (playerCount <= 0) return 0;
+            var extras = Mathf.FloorToInt(playerCount * Mathf.Max(0f, extraSavesPerPlayerRatio));
+            return playerCount + extras;
+        }
 
-            if (categories == null) return result;
+        /// <summary>Sum of save variant weights. Should be ≤ 100 for a valid config.</summary>
+        public float TotalSaveWeight =>
+            saveVariants?.Where(v => v != null && v.card != null && v.weight > 0f)
+                .Sum(v => v.weight) ?? 0f;
+
+        /// <summary>Enumerates non-save card definitions and their counts for deck building.</summary>
+        public IEnumerable<(CardDefinition card, int count)> EnumerateBaseCardCounts()
+        {
+            if (categories == null) yield break;
 
             foreach (var cat in categories)
             {
@@ -44,13 +56,31 @@ namespace Cards
                 {
                     if (slot.card == null || slot.count <= 0) continue;
 
-                    for (var i = 0; i < slot.count; i++)
-                        result.Add(slot.card);
+                    // Ignore any slots that accidentally reference the save category.
+                    if (slot.card.category == saveCategory) continue;
+
+                    yield return (slot.card, slot.count);
                 }
             }
-
-            return result;
         }
+
+        /// <summary>Total expected deck size for a given player count, including saves.</summary>
+        public int GetExpectedTotalCardCount(int playerCount)
+        {
+            return TotalBaseCardCount + GetExpectedSaveCount(playerCount);
+        }
+    }
+
+    [Serializable]
+    public class SaveVariant
+    {
+        [Tooltip("A specific save card variant (e.g., 'Goalie Save', 'Miracle Save').")]
+        public CardDefinition card;
+
+        [Range(0f, 100f)]
+        [Tooltip("Percentage chance for this variant when generating save cards.\n" +
+                 "All save variant weights should sum to <= 100%.")]
+        public float weight;
     }
 
     [Serializable]

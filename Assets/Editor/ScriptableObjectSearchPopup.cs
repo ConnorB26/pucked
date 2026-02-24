@@ -6,6 +6,7 @@ using UnityEngine;
 
 namespace Editor
 {
+    /// <summary>Generic searchable popup window for selecting any ScriptableObject asset by name.</summary>
     public class ScriptableObjectSearchPopup<T> : EditorWindow where T : ScriptableObject
     {
         private List<T> _assets;

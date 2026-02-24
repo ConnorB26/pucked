@@ -1,10 +1,10 @@
-﻿using Actions;
+using Actions;
 using Effects.Base;
-using Resolver;
 using UnityEngine;
 
 namespace Effects.Implementations
 {
+    /// <summary>Lets the owner see the top N cards of the draw pile without drawing them.</summary>
     [CreateAssetMenu(menuName = "Puckd/Effects/Peek")]
     public class PeekEffect : CardEffect
     {

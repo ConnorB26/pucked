@@ -6,20 +6,9 @@ using Effects.Base;
 using UnityEditor;
 using UnityEngine;
 
-//
-// ======================================================
-//  PUCK'D — COMPLETE ADVANCED EFFECT EDITOR (SINGLE FILE)
-// ======================================================
-//  • Dynamic subclass detection (EliminationEffect, AttackEffect, etc.)
-//  • Create new effect assets from subclass picker
-//  • Duplicate effect assets
-//  • Clean UI sections & field grouping
-//  • Zero external utilities required
-// ======================================================
-//
-
 namespace Editor
 {
+    /// <summary>Custom inspector for CardEffect subclasses. Draws the effect's description, all serialized fields, and create/duplicate buttons.</summary>
     [CustomEditor(typeof(CardEffect), true)]
     public class EffectEditorFull : UnityEditor.Editor
     {
@@ -43,9 +32,6 @@ namespace Editor
             serializedObject.ApplyModifiedProperties();
         }
 
-        // --------------------------
-        // HEADER
-        // --------------------------
         private void DrawHeader(CardEffect effect)
         {
             EditorGUILayout.Space(5);
@@ -65,9 +51,6 @@ namespace Editor
             EditorGUILayout.Space(10);
         }
 
-        // --------------------------
-        // DESCRIPTION FIELD
-        // --------------------------
         private void DrawDescription()
         {
             EditorGUILayout.LabelField("Description", EditorStyles.boldLabel);
@@ -75,9 +58,6 @@ namespace Editor
             EditorGUILayout.Space(10);
         }
 
-        // --------------------------
-        // DRAW ALL OTHER SERIALIZED FIELDS
-        // --------------------------
         private void DrawEffectFields(CardEffect effect)
         {
             var iterator = serializedObject.GetIterator();
@@ -100,21 +80,16 @@ namespace Editor
             EditorGUILayout.Space(10);
         }
 
-        // --------------------------
-        // BUTTONS (CREATE CARD / DUPLICATE / CREATE EFFECT)
-        // --------------------------
         private void DrawButtons(CardEffect effect)
         {
             EditorGUILayout.Space(10);
 
             EditorGUILayout.BeginHorizontal();
 
-            // Create Card
             GUI.backgroundColor = new Color(0.75f, 1f, 0.75f);
             if (GUILayout.Button("Create Card Using This Effect", GUILayout.Height(25)))
                 CreateCardFromEffect(effect);
 
-            // Duplicate Effect
             GUI.backgroundColor = new Color(1f, 0.85f, 0.85f);
             if (GUILayout.Button("Duplicate Effect", GUILayout.Height(25)))
                 DuplicateEffect(effect);
@@ -125,15 +100,11 @@ namespace Editor
 
             EditorGUILayout.Space(10);
 
-            // Create new effect of any subclass
             if (GUILayout.Button("Create New Effect...", GUILayout.Height(25)))
                 ShowCreateEffectMenu();
         }
 
 
-        // --------------------------
-        // CREATE CARD FROM EFFECT
-        // --------------------------
         private void CreateCardFromEffect(CardEffect effect)
         {
             var path = EditorUtility.SaveFilePanelInProject(
@@ -156,9 +127,6 @@ namespace Editor
             Selection.activeObject = card;
         }
 
-        // --------------------------
-        // DUPLICATE EFFECT
-        // --------------------------
         private void DuplicateEffect(CardEffect effect)
         {
             var originalPath = AssetDatabase.GetAssetPath(effect);
@@ -171,9 +139,6 @@ namespace Editor
             Selection.activeObject = clone;
         }
 
-        // --------------------------
-        // FIND ALL EFFECT SUBCLASSES
-        // --------------------------
         private List<Type> GetEffectTypes()
         {
             return AppDomain.CurrentDomain.GetAssemblies()
@@ -186,9 +151,6 @@ namespace Editor
                 .ToList();
         }
 
-        // --------------------------
-        // EFFECT TYPE PICKER MENU
-        // --------------------------
         private void ShowCreateEffectMenu()
         {
             var menu = new GenericMenu();

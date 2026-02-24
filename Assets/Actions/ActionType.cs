@@ -1,5 +1,6 @@
-﻿namespace Actions
+namespace Actions
 {
+    /// <summary>Discriminates the action produced by an effect after EffectResolver processing.</summary>
     public enum ActionType
     {
         RequestElimination,

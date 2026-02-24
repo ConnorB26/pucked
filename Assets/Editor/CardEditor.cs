@@ -9,6 +9,7 @@ using UnityEngine;
 
 namespace Editor
 {
+    /// <summary>Custom inspector for CardDefinition. Draws a styled header, card fields, and a reorderable effects list.</summary>
     [CustomEditor(typeof(CardDefinition))]
     public class CardEditor : UnityEditor.Editor
     {
@@ -21,9 +22,6 @@ namespace Editor
 
         private ReorderableList _effectList;
 
-        // -------------------------------------------------
-        // Init
-        // -------------------------------------------------
         private void OnEnable()
         {
             _cardNameProp = serializedObject.FindProperty("cardName");
@@ -36,9 +34,6 @@ namespace Editor
             BuildEffectList();
         }
 
-        // -------------------------------------------------
-        // Effect type discovery (robust)
-        // -------------------------------------------------
         private static List<Type> GetAllEffectTypes()
         {
             var result = new List<Type>();
@@ -69,9 +64,6 @@ namespace Editor
             return result.OrderBy(t => t.Name).ToList();
         }
 
-        // -------------------------------------------------
-        // Reorderable effects list
-        // -------------------------------------------------
         private void BuildEffectList()
         {
             _effectList = new ReorderableList(serializedObject, _effectsProp, true, true, true, true);
@@ -103,9 +95,6 @@ namespace Editor
             };
         }
 
-        // -------------------------------------------------
-        // Search existing effects popup
-        // -------------------------------------------------
         private void ShowExistingEffectSearch(Action<CardEffect> onSelect)
         {
             var guids = AssetDatabase.FindAssets("t:CardEffect");
@@ -117,9 +106,6 @@ namespace Editor
             EffectSearchWindow.Init("Select Effect", items, onSelect);
         }
 
-        // -------------------------------------------------
-        // Create new effect popup
-        // -------------------------------------------------
         private void ShowCreateEffectWindow()
         {
             var types = GetAllEffectTypes();
@@ -147,9 +133,6 @@ namespace Editor
             });
         }
 
-        // -------------------------------------------------
-        // Inspector
-        // -------------------------------------------------
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
@@ -184,9 +167,6 @@ namespace Editor
             serializedObject.ApplyModifiedProperties();
         }
 
-        // -------------------------------------------------
-        // Top header
-        // -------------------------------------------------
         private void DrawHeader()
         {
             EditorGUILayout.Space(4);
@@ -200,9 +180,6 @@ namespace Editor
             EditorGUILayout.Space(4);
         }
 
-        // -------------------------------------------------
-        // Pro-style section header bar
-        // -------------------------------------------------
         private void DrawSectionHeader(string label)
         {
             var rect = EditorGUILayout.GetControlRect(false, 22f);
@@ -220,9 +197,6 @@ namespace Editor
             GUILayout.Space(4);
         }
 
-        // -------------------------------------------------
-        // Clone as variation
-        // -------------------------------------------------
         private void CloneVariation(CardDefinition card)
         {
             var originalPath = AssetDatabase.GetAssetPath(card);
@@ -236,9 +210,6 @@ namespace Editor
             Selection.activeObject = clone;
         }
 
-        // -------------------------------------------------
-        // SearchWindow for existing effects
-        // -------------------------------------------------
         public class EffectSearchWindow : EditorWindow
         {
             private List<CardEffect> _items;
@@ -275,9 +246,6 @@ namespace Editor
             }
         }
 
-        // -------------------------------------------------
-        // EffectTypeWindow for creating new effect assets
-        // -------------------------------------------------
         public class EffectTypeWindow : EditorWindow
         {
             private List<Type> _types;
